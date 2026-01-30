@@ -1,0 +1,28 @@
+version: "3.7"
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--port", "6379"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - data
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+volumes:
+  redis_data:
+    external: true
+    name: "${TENANT}_${ENV}_redis_data"
+
+networks:
+  data:
+    external: true
+    name: "${DOCKER_NETWORK}"
