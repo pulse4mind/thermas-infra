@@ -55,7 +55,7 @@ services:
 volumes:
   vol_certificates:
     external: true
-    name: volume_swarm_certificates
+    name: "${TENANT}_${ENV}_certificates"
 
 networks:
   edge:

@@ -4,14 +4,15 @@ services:
   postgres:
     image: pgvector/pgvector:pg14
     environment:
-      - POSTGRES_PASSWORD=AdminAdmin
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    secrets:
+      - postgres_password
     networks:
       - data
     volumes:
       - postgres_data:/var/lib/postgresql/data
     deploy:
-      mode: replicated
-      replicas: 1
       placement:
         constraints:
           - node.role == manager
@@ -20,10 +21,15 @@ services:
           cpus: "0.5"
           memory: 1024M
 
+secrets:
+  postgres_password:
+    external: true
+    name: "${TENANT}_${ENV}_postgres_password"
+
 volumes:
   postgres_data:
     external: true
-    name: postgres_data
+    name: "${TENANT}_${ENV}_postgres_data"
 
 networks:
   data:

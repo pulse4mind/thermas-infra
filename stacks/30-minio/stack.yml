@@ -2,17 +2,21 @@ version: "3.7"
 
 services:
   minio:
-    image: quay.io/minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2024-12-18T05-56-44Z
     command: server /data --console-address ":9001"
     networks:
       - edge
+      - data
     volumes:
       - minio_data:/data
     environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=AdminAdmin
+      - MINIO_ROOT_USER_FILE=/run/secrets/minio_root_user
+      - MINIO_ROOT_PASSWORD_FILE=/run/secrets/minio_root_password
       - MINIO_BROWSER_REDIRECT_URL=https://${DOMAIN_MINIO_CONSOLE}
       - MINIO_SERVER_URL=https://${DOMAIN_S3}
+    secrets:
+      - minio_root_user
+      - minio_root_password
     deploy:
       placement:
         constraints:
@@ -20,22 +24,37 @@ services:
       labels:
         - traefik.enable=true
 
+        # API S3
         - traefik.http.routers.s3.rule=Host(`${DOMAIN_S3}`)
         - traefik.http.routers.s3.entrypoints=websecure
         - traefik.http.routers.s3.tls.certresolver=letsencryptresolver
         - traefik.http.services.s3.loadbalancer.server.port=9000
+        - traefik.http.routers.s3.service=s3
 
+        # Console
         - traefik.http.routers.minio_console.rule=Host(`${DOMAIN_MINIO_CONSOLE}`)
         - traefik.http.routers.minio_console.entrypoints=websecure
         - traefik.http.routers.minio_console.tls.certresolver=letsencryptresolver
         - traefik.http.services.minio_console.loadbalancer.server.port=9001
+        - traefik.http.routers.minio_console.service=minio_console
+
+secrets:
+  minio_root_user:
+    external: true
+    name: "${TENANT}_${ENV}_minio_root_user"
+  minio_root_password:
+    external: true
+    name: "${TENANT}_${ENV}_minio_root_password"
 
 volumes:
   minio_data:
     external: true
-    name: minio_data
+    name: "${TENANT}_${ENV}_minio_data"
 
 networks:
   edge:
     external: true
     name: "${EDGE_NETWORK}"
+  data:
+    external: true
+    name: "${DATA_NETWORK}"

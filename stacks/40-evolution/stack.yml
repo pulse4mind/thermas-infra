@@ -3,7 +3,13 @@ version: "3.7"
 services:
   evolution:
     image: evoapicloud/evolution-api:v2.3.7
-    command: ["node", "./dist/src/main.js"]
+    command:
+      - sh
+      - -c
+      - |
+        export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)";
+        export AUTHENTICATION_API_KEY="$(cat /run/secrets/evolution_api_key)";
+        exec node ./dist/src/main.js
     networks:
       - edge
       - data
@@ -15,14 +21,22 @@ services:
       - DOCKER_ENV=true
 
       - AUTHENTICATION_TYPE=apikey
-      - AUTHENTICATION_API_KEY=72c3ccfa4228772d20c536733b595c
+
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public
 
       - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://redis:6379/6
-      - CACHE_REDIS_PREFIX_KEY=evolution_thermas_prod
+      - CACHE_REDIS_URI=redis://redis:6379/${EVO_CACHE_REDIS_DB}
+      - CACHE_REDIS_PREFIX_KEY=${EVO_CACHE_PREFIX}
       - CACHE_LOCAL_ENABLED=false
 
-      - LOG_LEVEL=ERROR,WARN,INFO
+      - LOG_LEVEL=${EVO_LOG_LEVEL}
+
+    secrets:
+      - evolution_api_key
+      - postgres_password
+
     deploy:
       placement:
         constraints:
@@ -34,13 +48,21 @@ services:
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
         - traefik.http.services.evolution.loadbalancer.server.port=8080
 
+secrets:
+  evolution_api_key:
+    external: true
+    name: "${TENANT}_${ENV}_evolution_api_key"
+  postgres_password:
+    external: true
+    name: "${TENANT}_${ENV}_postgres_password"
+
 volumes:
   evolution_instances:
     external: true
-    name: evolution_instances
+    name: "${TENANT}_${ENV}_evolution_instances"
   evolution_store:
     external: true
-    name: evolution_store
+    name: "${TENANT}_${ENV}_evolution_store"
 
 networks:
   edge:

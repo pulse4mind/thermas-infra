@@ -1,39 +1,44 @@
 version: "3.7"
 
+x-n8n-env: &n8n_env
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_USER: ${N8N_DB_USER}
+  DB_POSTGRESDB_PASSWORD_FILE: /run/secrets/postgres_password
+
+  N8N_ENCRYPTION_KEY_FILE: /run/secrets/n8n_encryption_key
+
+  N8N_HOST: ${DOMAIN_N8N}
+  N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL}
+  N8N_PROTOCOL: https
+  NODE_ENV: production
+  WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+
+  EXECUTIONS_MODE: queue
+  QUEUE_BULL_REDIS_HOST: redis
+  QUEUE_BULL_REDIS_PORT: "6379"
+  QUEUE_BULL_REDIS_DB: "${N8N_QUEUE_REDIS_DB}"
+
+  NODE_FUNCTION_ALLOW_EXTERNAL: ${N8N_NODE_FUNCTION_ALLOW_EXTERNAL}
+  EXECUTIONS_DATA_PRUNE: "true"
+  EXECUTIONS_DATA_MAX_AGE: "${N8N_EXECUTIONS_DATA_MAX_AGE}"
+  GENERIC_TIMEZONE: ${TZ}
+  TZ: ${TZ}
+
 services:
   n8n_editor:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.90.2
     command: start
     networks:
       - edge
-      - data
     environment:
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_DATABASE=n8n_queue
-      - DB_POSTGRESDB_HOST=postgres
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_USER=postgres
-      - DB_POSTGRESDB_PASSWORD=AdminAdmin
-      - N8N_ENCRYPTION_KEY=r3djGX2vPoeL9zKL
-
-      - N8N_HOST=${DOMAIN_N8N}
-      - N8N_EDITOR_BASE_URL=https://${DOMAIN_N8N}/
-      - N8N_PROTOCOL=https
-      - NODE_ENV=production
-      - WEBHOOK_URL=https://${DOMAIN_N8N}/
-
-      - EXECUTIONS_MODE=queue
-      - QUEUE_BULL_REDIS_HOST=redis
-      - QUEUE_BULL_REDIS_PORT=6379
-      - QUEUE_BULL_REDIS_DB=2
-
-      - NODE_FUNCTION_ALLOW_EXTERNAL=moment,lodash,moment-with-locales
-      - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=336
-      - GENERIC_TIMEZONE=${TZ}
-      - TZ=${TZ}
+      <<: *n8n_env
+    secrets:
+      - postgres_password
+      - n8n_encryption_key
     deploy:
-      mode: replicated
       replicas: 1
       placement:
         constraints:
@@ -42,43 +47,20 @@ services:
         - traefik.enable=true
         - traefik.http.routers.n8n_editor.rule=Host(`${DOMAIN_N8N}`)
         - traefik.http.routers.n8n_editor.entrypoints=websecure
-        - traefik.http.routers.n8n_editor.priority=1
         - traefik.http.routers.n8n_editor.tls.certresolver=letsencryptresolver
         - traefik.http.services.n8n_editor.loadbalancer.server.port=5678
 
   n8n_webhook:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.90.2
     command: webhook
     networks:
       - edge
-      - data
     environment:
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_DATABASE=n8n_queue
-      - DB_POSTGRESDB_HOST=postgres
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_USER=postgres
-      - DB_POSTGRESDB_PASSWORD=AdminAdmin
-      - N8N_ENCRYPTION_KEY=r3djGX2vPoeL9zKL
-
-      - N8N_HOST=${DOMAIN_N8N}
-      - N8N_EDITOR_BASE_URL=https://${DOMAIN_N8N}/
-      - N8N_PROTOCOL=https
-      - NODE_ENV=production
-      - WEBHOOK_URL=https://${DOMAIN_N8N}/
-
-      - EXECUTIONS_MODE=queue
-      - QUEUE_BULL_REDIS_HOST=redis
-      - QUEUE_BULL_REDIS_PORT=6379
-      - QUEUE_BULL_REDIS_DB=2
-
-      - NODE_FUNCTION_ALLOW_EXTERNAL=moment,lodash,moment-with-locales
-      - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=336
-      - GENERIC_TIMEZONE=${TZ}
-      - TZ=${TZ}
+      <<: *n8n_env
+    secrets:
+      - postgres_password
+      - n8n_encryption_key
     deploy:
-      mode: replicated
       replicas: 2
       placement:
         constraints:
@@ -92,41 +74,28 @@ services:
         - traefik.http.services.n8n_webhook.loadbalancer.server.port=5678
 
   n8n_worker:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.90.2
     command: worker --concurrency=10
     networks:
       - data
     environment:
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_DATABASE=n8n_queue
-      - DB_POSTGRESDB_HOST=postgres
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_USER=postgres
-      - DB_POSTGRESDB_PASSWORD=AdminAdmin
-      - N8N_ENCRYPTION_KEY=r3djGX2vPoeL9zKL
-
-      - N8N_HOST=${DOMAIN_N8N}
-      - N8N_EDITOR_BASE_URL=https://${DOMAIN_N8N}/
-      - N8N_PROTOCOL=https
-      - NODE_ENV=production
-      - WEBHOOK_URL=https://${DOMAIN_N8N}/
-
-      - EXECUTIONS_MODE=queue
-      - QUEUE_BULL_REDIS_HOST=redis
-      - QUEUE_BULL_REDIS_PORT=6379
-      - QUEUE_BULL_REDIS_DB=2
-
-      - NODE_FUNCTION_ALLOW_EXTERNAL=moment,lodash,moment-with-locales
-      - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=336
-      - GENERIC_TIMEZONE=${TZ}
-      - TZ=${TZ}
+      <<: *n8n_env
+    secrets:
+      - postgres_password
+      - n8n_encryption_key
     deploy:
-      mode: replicated
       replicas: 1
       placement:
         constraints:
           - node.role == manager
+
+secrets:
+  postgres_password:
+    external: true
+    name: "${TENANT}_${ENV}_postgres_password"
+  n8n_encryption_key:
+    external: true
+    name: "${TENANT}_${ENV}_n8n_encryption_key"
 
 networks:
   edge:

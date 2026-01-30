@@ -1,115 +1,108 @@
 version: "3.7"
 
+x-chatwoot-env: &chatwoot_env
+  INSTALLATION_NAME: chatwoot
+  NODE_ENV: production
+  RAILS_ENV: production
+  INSTALLATION_ENV: docker
+
+  FRONTEND_URL: ${FRONTEND_URL}
+  FORCE_SSL: ${FORCE_SSL}
+  ENABLE_ACCOUNT_SIGNUP: "${CHATWOOT_ENABLE_SIGNUP}"
+  DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
+
+  POSTGRES_HOST: postgres
+  POSTGRES_USERNAME: ${CHATWOOT_POSTGRES_USER}
+  POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+
+  REDIS_URL: redis://redis:6379
+
+  MAILER_SENDER_EMAIL: ${CHATWOOT_MAILER_SENDER}
+  MAILER_INBOUND_EMAIL_DOMAIN: ${MAILER_INBOUND_EMAIL_DOMAIN}
+
+  SMTP_DOMAIN: ${SMTP_DOMAIN}
+  SMTP_ADDRESS: ${SMTP_ADDRESS}
+  SMTP_PORT: "${SMTP_PORT}"
+  SMTP_USERNAME: ${SMTP_USERNAME}
+  SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION}
+  SMTP_ENABLE_STARTTLS_AUTO: "true"
+  SMTP_OPENSSL_VERIFY_MODE: ${SMTP_OPENSSL_VERIFY_MODE}
+
 services:
   chatwoot_app:
     image: chatwoot/chatwoot:v4.9.2
-    command: bundle exec rails s -p 3000 -b 0.0.0.0
-    entrypoint: docker/entrypoints/rails.sh
+    command:
+      - sh
+      - -c
+      - |
+        export SECRET_KEY_BASE="$(cat /run/secrets/chatwoot_secret_key_base)";
+        export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)";
+        export SMTP_PASSWORD="$(cat /run/secrets/smtp_password)";
+        exec bundle exec rails s -p 3000 -b 0.0.0.0
     volumes:
       - chatwoot_data:/app/storage
     networks:
       - edge
       - data
     environment:
-      - INSTALLATION_NAME=chatwoot
-      - NODE_ENV=production
-      - RAILS_ENV=production
-      - INSTALLATION_ENV=docker
-
-      - SECRET_KEY_BASE=123458bb7ef6402f6a8bcf5d3be54321
-
-      - FRONTEND_URL=https://${DOMAIN_CHAT}
-      - ASSET_CDN_HOST=https://${DOMAIN_CHAT}
-      - DEFAULT_LOCALE=pt_BR
-      - FORCE_SSL=true
-      - ENABLE_ACCOUNT_SIGNUP=false
-
-      - REDIS_URL=redis://redis:6379
-
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USERNAME=postgres
-      - POSTGRES_PASSWORD=AdminAdmin
-      - POSTGRES_DATABASE=chatwoot
-
-      - ACTIVE_STORAGE_SERVICE=local
-      - RAILS_LOG_TO_STDOUT=true
-      - USE_INBOX_AVATAR_FOR_BOT=true
-
-      - MAILER_SENDER_EMAIL=Chatwoot <felipe.rasche@pulse4mind.com>
-      - SMTP_DOMAIN=pulse4mind.com
-      - SMTP_ADDRESS=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_USERNAME=felipe.rasche@pulse4mind.com
-      - SMTP_PASSWORD=txxhhfhtiirwsfau
-      - SMTP_AUTHENTICATION=login
-      - SMTP_ENABLE_STARTTLS_AUTO=true
-      - SMTP_OPENSSL_VERIFY_MODE=peer
-      - MAILER_INBOUND_EMAIL_DOMAIN=pulse4mind.com
+      <<: *chatwoot_env
+    secrets:
+      - chatwoot_secret_key_base
+      - postgres_password
+      - smtp_password
     deploy:
-      mode: replicated
-      replicas: 1
       placement:
         constraints:
           - node.role == manager
       labels:
         - traefik.enable=true
-        - traefik.http.routers.chatwoot_app.rule=Host(`${DOMAIN_CHAT}`)
-        - traefik.http.routers.chatwoot_app.entrypoints=websecure
-        - traefik.http.routers.chatwoot_app.tls.certresolver=letsencryptresolver
-        - traefik.http.services.chatwoot_app.loadbalancer.server.port=3000
+        - traefik.http.routers.chatwoot.rule=Host(`${DOMAIN_CHAT}`)
+        - traefik.http.routers.chatwoot.entrypoints=websecure
+        - traefik.http.routers.chatwoot.tls.certresolver=letsencryptresolver
+        - traefik.http.services.chatwoot.loadbalancer.server.port=3000
+        - traefik.http.middlewares.chatwoot-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
+        - traefik.http.routers.chatwoot.middlewares=chatwoot-sslheader@docker
 
   chatwoot_sidekiq:
     image: chatwoot/chatwoot:v4.9.2
-    command: bundle exec sidekiq -C config/sidekiq.yml
+    command:
+      - sh
+      - -c
+      - |
+        export SECRET_KEY_BASE="$(cat /run/secrets/chatwoot_secret_key_base)";
+        export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)";
+        export SMTP_PASSWORD="$(cat /run/secrets/smtp_password)";
+        exec bundle exec sidekiq -C config/sidekiq.yml
     volumes:
       - chatwoot_data:/app/storage
     networks:
       - data
     environment:
-      - INSTALLATION_NAME=chatwoot
-      - NODE_ENV=production
-      - RAILS_ENV=production
-      - INSTALLATION_ENV=docker
-
-      - SECRET_KEY_BASE=123458bb7ef6402f6a8bcf5d3be54321
-
-      - FRONTEND_URL=https://${DOMAIN_CHAT}
-      - DEFAULT_LOCALE=pt_BR
-      - FORCE_SSL=true
-      - ENABLE_ACCOUNT_SIGNUP=false
-
-      - REDIS_URL=redis://redis:6379
-
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USERNAME=postgres
-      - POSTGRES_PASSWORD=AdminAdmin
-      - POSTGRES_DATABASE=chatwoot
-
-      - ACTIVE_STORAGE_SERVICE=local
-      - RAILS_LOG_TO_STDOUT=true
-      - USE_INBOX_AVATAR_FOR_BOT=true
-
-      - MAILER_SENDER_EMAIL=Chatwoot <felipe.rasche@pulse4mind.com>
-      - SMTP_DOMAIN=pulse4mind.com
-      - SMTP_ADDRESS=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_USERNAME=felipe.rasche@pulse4mind.com
-      - SMTP_PASSWORD=txxhhfhtiirwsfau
-      - SMTP_AUTHENTICATION=login
-      - SMTP_ENABLE_STARTTLS_AUTO=true
-      - SMTP_OPENSSL_VERIFY_MODE=peer
-      - MAILER_INBOUND_EMAIL_DOMAIN=pulse4mind.com
+      <<: *chatwoot_env
+    secrets:
+      - chatwoot_secret_key_base
+      - postgres_password
+      - smtp_password
     deploy:
-      mode: replicated
-      replicas: 1
       placement:
         constraints:
           - node.role == manager
 
+secrets:
+  chatwoot_secret_key_base:
+    external: true
+    name: "${TENANT}_${ENV}_chatwoot_secret_key_base"
+  postgres_password:
+    external: true
+    name: "${TENANT}_${ENV}_postgres_password"
+  smtp_password:
+    external: true
+    name: "${TENANT}_${ENV}_smtp_password"
+
 volumes:
   chatwoot_data:
     external: true
-    name: chatwoot_data
+    name: "${TENANT}_${ENV}_chatwoot_data"
 
 networks:
   edge:

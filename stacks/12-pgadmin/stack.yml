@@ -8,9 +8,8 @@ services:
       - data
     environment:
       - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+      - PGADMIN_DEFAULT_PASSWORD_FILE=/run/secrets/pgadmin_password
 
-      # Ajustes para rodar atrás do Traefik
       - PGADMIN_CONFIG_PROXY_X_FOR_COUNT=1
       - PGADMIN_CONFIG_PROXY_X_PROTO_COUNT=1
       - PGADMIN_CONFIG_PROXY_X_HOST_COUNT=1
@@ -18,6 +17,9 @@ services:
       - PGADMIN_CONFIG_SESSION_COOKIE_SECURE=True
       - PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION=False
       - PGADMIN_CONFIG_WTF_CSRF_SSL_STRICT=False
+
+    secrets:
+      - pgadmin_password
 
     volumes:
       - pgadmin_data:/var/lib/pgadmin
@@ -35,10 +37,15 @@ services:
         - traefik.http.middlewares.pgadmin-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
         - traefik.http.routers.pgadmin.middlewares=pgadmin-sslheader@docker
 
+secrets:
+  pgadmin_password:
+    external: true
+    name: "${TENANT}_${ENV}_pgadmin_password"
+
 volumes:
   pgadmin_data:
     external: true
-    name: pgadmin_data
+    name: "${TENANT}_${ENV}_pgadmin_data"
 
 networks:
   edge:
