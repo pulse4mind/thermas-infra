@@ -1,0 +1,76 @@
+version: "3.7"
+
+services:
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    command: ["node", "./dist/src/main.js"]
+    networks:
+      - edge
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    environment:
+      - SERVER_URL=https://${DOMAIN_EVO}
+      - DOCKER_ENV=true
+
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY_FILE=/run/secrets/evolution_api_key
+
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public
+
+      - CHATWOOT_ENABLED=true
+
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379/${EVO_CACHE_REDIS_DB}
+      - CACHE_REDIS_PREFIX_KEY=${EVO_CACHE_PREFIX}
+      - CACHE_LOCAL_ENABLED=false
+
+      - LOG_LEVEL=${EVO_LOG_LEVEL}
+
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1032131254
+      - CONFIG_SESSION_PHONE_CLIENT=OrionDesign
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+
+    secrets:
+      - evolution_api_key
+      - postgres_password
+
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.evolution.rule=Host(`${DOMAIN_EVO}`)
+        - traefik.http.routers.evolution.entrypoints=websecure
+        - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
+
+        - traefik.http.routers.evolution.middlewares=evolution-forwarded
+        - traefik.http.middlewares.evolution-forwarded.headers.customrequestheaders.X-Forwarded-Proto=https
+        - traefik.http.middlewares.evolution-forwarded.headers.customrequestheaders.X-Forwarded-Host=${DOMAIN_EVO}
+
+        - traefik.http.services.evolution.loadbalancer.server.port=8080
+        - traefik.http.services.evolution.loadbalancer.passHostHeader=true
+
+secrets:
+  evolution_api_key:
+    external: true
+    name: "${TENANT}_${ENV}_evolution_api_key"
+  postgres_password:
+    external: true
+    name: "${TENANT}_${ENV}_postgres_password"
+
+volumes:
+  evolution_instances:
+    external: true
+    name: "${TENANT}_${ENV}_evolution_instances"
+  evolution_store:
+    external: true
+    name: "${TENANT}_${ENV}_evolution_store"
+
+networks:
+  edge:
+    external: true
+    name: "${DOCKER_NETWORK}"
