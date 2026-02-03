@@ -1,4 +1,4 @@
-version: "3.8"
+version: "3.7"
 
 services:
   redis:
@@ -7,33 +7,39 @@ services:
       [
         "redis-server",
         "--appendonly", "yes",
-        "--appendfsync", "everysec",
-        "--port", "6379"
+        "--port", "6379",
+        "--maxmemory", "768mb",
+        "--maxmemory-policy", "allkeys-lru",
+        "--save", "",
+        "--protected-mode", "yes"
       ]
     volumes:
       - redis_data:/data
     networks:
       - data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     deploy:
-      mode: replicated
-      replicas: 1
       placement:
         constraints:
           - node.role == manager
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 5
-        window: 60s
       resources:
         limits:
           cpus: "0.5"
           memory: 1024M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 60s
+    stop_grace_period: 30s
+    ulimits:
+      nofile:
+        soft: 10032
+        hard: 10032
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   redis_data:
