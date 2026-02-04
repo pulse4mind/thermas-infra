@@ -32,10 +32,13 @@ x-n8n-env: &n8n_env
 services:
   n8n_editor:
     image: n8nio/n8n:1.90.2
-    entrypoint: ["/bin/sh","-lc"]
+    entrypoint: ["/bin/sh", "-lc"]
     command: "set -e; test -f /run/secrets/n8n_encryption_key || { echo 'ERROR missing n8n_encryption_key'; ls -lah /run/secrets || true; exit 1; }; export N8N_ENCRYPTION_KEY=\"$$(cat /run/secrets/n8n_encryption_key)\"; exec n8n start"
-    networks: [edge, data]
-    environment: { <<: *n8n_env }
+    networks:
+      - edge
+      - data
+    environment:
+      <<: *n8n_env
     secrets:
       - source: postgres_password
         target: postgres_password
@@ -44,7 +47,8 @@ services:
     deploy:
       replicas: 1
       placement:
-        constraints: [node.role == manager]
+        constraints:
+          - node.role == manager
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
@@ -55,10 +59,13 @@ services:
 
   n8n_webhook:
     image: n8nio/n8n:1.90.2
-    entrypoint: ["/bin/sh","-lc"]
+    entrypoint: ["/bin/sh", "-lc"]
     command: "set -e; test -f /run/secrets/n8n_encryption_key || { echo 'ERROR missing n8n_encryption_key'; ls -lah /run/secrets || true; exit 1; }; export N8N_ENCRYPTION_KEY=\"$$(cat /run/secrets/n8n_encryption_key)\"; exec n8n webhook"
-    networks: [edge, data]
-    environment: { <<: *n8n_env }
+    networks:
+      - edge
+      - data
+    environment:
+      <<: *n8n_env
     secrets:
       - source: postgres_password
         target: postgres_password
@@ -67,7 +74,8 @@ services:
     deploy:
       replicas: 2
       placement:
-        constraints: [node.role == manager]
+        constraints:
+          - node.role == manager
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
@@ -79,10 +87,12 @@ services:
 
   n8n_worker:
     image: n8nio/n8n:1.90.2
-    entrypoint: ["/bin/sh","-lc"]
+    entrypoint: ["/bin/sh", "-lc"]
     command: "set -e; test -f /run/secrets/n8n_encryption_key || { echo 'ERROR missing n8n_encryption_key'; ls -lah /run/secrets || true; exit 1; }; export N8N_ENCRYPTION_KEY=\"$$(cat /run/secrets/n8n_encryption_key)\"; exec n8n worker --concurrency=10"
-    networks: [data]
-    environment: { <<: *n8n_env }
+    networks:
+      - data
+    environment:
+      <<: *n8n_env
     secrets:
       - source: postgres_password
         target: postgres_password
@@ -91,7 +101,8 @@ services:
     deploy:
       replicas: 1
       placement:
-        constraints: [node.role == manager]
+        constraints:
+          - node.role == manager
 
 secrets:
   postgres_password:
