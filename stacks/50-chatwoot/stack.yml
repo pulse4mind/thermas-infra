@@ -11,12 +11,12 @@ x-chatwoot-env: &chatwoot_env
   ENABLE_ACCOUNT_SIGNUP: "${CHATWOOT_ENABLE_SIGNUP}"
   DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
 
-  POSTGRES_HOST: postgres
+  POSTGRES_HOST: postgres_postgres
   POSTGRES_USERNAME: ${CHATWOOT_POSTGRES_USER}
   POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
 
-  # Redis com AUTH (obrigatório agora)
-  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  # Mantemos o host aqui; a senha entra via secret no command (com URL-encode)
+  REDIS_URL: redis://redis:6379/0
 
   MAILER_SENDER_EMAIL: ${CHATWOOT_MAILER_SENDER}
   MAILER_INBOUND_EMAIL_DOMAIN: ${MAILER_INBOUND_EMAIL_DOMAIN}
@@ -34,11 +34,19 @@ services:
     image: chatwoot/chatwoot:v4.9.2
     command:
       - sh
-      - -c
+      - -lc
       - |
-        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
+        set -e
+
+        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)"
+        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)"
+        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)"
+
+        # Redis com senha contendo caracteres especiais: fazer URL-encode antes de montar a URL
+        REDIS_RAW="$$(cat /run/secrets/redis_password)"
+        REDIS_ENC="$$(ruby -ruri -e 'puts URI.encode_www_form_component(ARGV[0])' "$$REDIS_RAW")"
+        export REDIS_URL="redis://:$$REDIS_ENC@redis:6379/0"
+
         exec bundle exec rails s -p 3000 -b 0.0.0.0
     volumes:
       - chatwoot_data:/app/storage
@@ -51,6 +59,7 @@ services:
       - chatwoot_secret_key_base
       - postgres_password
       - smtp_password
+      - redis_password
     deploy:
       placement:
         constraints:
@@ -68,11 +77,19 @@ services:
     image: chatwoot/chatwoot:v4.9.2
     command:
       - sh
-      - -c
+      - -lc
       - |
-        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
+        set -e
+
+        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)"
+        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)"
+        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)"
+
+        # Redis com senha contendo caracteres especiais: fazer URL-encode antes de montar a URL
+        REDIS_RAW="$$(cat /run/secrets/redis_password)"
+        REDIS_ENC="$$(ruby -ruri -e 'puts URI.encode_www_form_component(ARGV[0])' "$$REDIS_RAW")"
+        export REDIS_URL="redis://:$$REDIS_ENC@redis:6379/0"
+
         exec bundle exec sidekiq -C config/sidekiq.yml
     volumes:
       - chatwoot_data:/app/storage
@@ -84,6 +101,7 @@ services:
       - chatwoot_secret_key_base
       - postgres_password
       - smtp_password
+      - redis_password
     deploy:
       placement:
         constraints:
@@ -99,6 +117,9 @@ secrets:
   smtp_password:
     external: true
     name: "${TENANT}_${ENV}_smtp_password"
+  redis_password:
+    external: true
+    name: "${TENANT}_${ENV}_redis_password"
 
 volumes:
   chatwoot_data:
