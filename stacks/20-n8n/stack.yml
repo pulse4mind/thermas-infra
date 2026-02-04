@@ -3,12 +3,10 @@ version: "3.7"
 x-n8n-env: &n8n_env
   DB_TYPE: postgresdb
   DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
-  DB_POSTGRESDB_HOST: postgres
-  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_HOST: ${POSTGRES_HOST}
+  DB_POSTGRESDB_PORT: "${POSTGRES_PORT}"
   DB_POSTGRESDB_USER: ${N8N_DB_USER}
   DB_POSTGRESDB_PASSWORD_FILE: /run/secrets/postgres_password
-
-  N8N_ENCRYPTION_KEY_FILE: /run/secrets/n8n_encryption_key
 
   N8N_HOST: ${DOMAIN_N8N}
   N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL}
@@ -17,8 +15,8 @@ x-n8n-env: &n8n_env
   WEBHOOK_URL: ${N8N_WEBHOOK_URL}
 
   EXECUTIONS_MODE: queue
-  QUEUE_BULL_REDIS_HOST: redis
-  QUEUE_BULL_REDIS_PORT: "6379"
+  QUEUE_BULL_REDIS_HOST: ${REDIS_HOST}
+  QUEUE_BULL_REDIS_PORT: "${REDIS_PORT}"
   QUEUE_BULL_REDIS_DB: "${N8N_QUEUE_REDIS_DB}"
 
   NODE_FUNCTION_ALLOW_EXTERNAL: ${N8N_NODE_FUNCTION_ALLOW_EXTERNAL}
@@ -30,9 +28,13 @@ x-n8n-env: &n8n_env
 services:
   n8n_editor:
     image: n8nio/n8n:1.90.2
-    command: start
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)" &&
+      exec n8n start
     networks:
       - edge
+      - data
     environment:
       <<: *n8n_env
     secrets:
@@ -45,6 +47,7 @@ services:
           - node.role == manager
       labels:
         - traefik.enable=true
+        - traefik.docker.network=${EDGE_NETWORK}
         - traefik.http.routers.n8n_editor.rule=Host(`${DOMAIN_N8N}`)
         - traefik.http.routers.n8n_editor.entrypoints=websecure
         - traefik.http.routers.n8n_editor.tls.certresolver=letsencryptresolver
@@ -52,9 +55,13 @@ services:
 
   n8n_webhook:
     image: n8nio/n8n:1.90.2
-    command: webhook
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)" &&
+      exec n8n webhook
     networks:
       - edge
+      - data
     environment:
       <<: *n8n_env
     secrets:
@@ -67,6 +74,7 @@ services:
           - node.role == manager
       labels:
         - traefik.enable=true
+        - traefik.docker.network=${EDGE_NETWORK}
         - traefik.http.routers.n8n_webhook.rule=Host(`${DOMAIN_N8N}`) && (PathPrefix(`/webhook`) || PathPrefix(`/webhook-test`))
         - traefik.http.routers.n8n_webhook.entrypoints=websecure
         - traefik.http.routers.n8n_webhook.priority=10
@@ -75,7 +83,10 @@ services:
 
   n8n_worker:
     image: n8nio/n8n:1.90.2
-    command: worker --concurrency=10
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)" &&
+      exec n8n worker --concurrency=10
     networks:
       - data
     environment:
