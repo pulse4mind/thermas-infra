@@ -5,17 +5,35 @@ services:
     image: evoapicloud/evolution-api:v2.3.7
     command:
       - sh
-      - -c
+      - -lc
       - |
-        export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)";
-        export AUTHENTICATION_API_KEY="$(cat /run/secrets/evolution_api_key)";
+        set -e
+
+        # --- Secrets (obrigatórias) ---
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; }
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; }
+        test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; exit 1; }
+
+        export AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key)"
+
+        # --- Postgres: senha tem caracteres especiais → URL-encode ---
+        export POSTGRES_PASSWORD_ENC="$$(node -p "encodeURIComponent(require('fs').readFileSync('/run/secrets/postgres_password','utf8').trim())")"
+        export DATABASE_CONNECTION_URI="postgresql://postgres:$${POSTGRES_PASSWORD_ENC}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/evolution?schema=public"
+
+        # --- Redis: senha tem caracteres especiais → URL-encode ---
+        export REDIS_PASSWORD_ENC="$$(node -p "encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim())")"
+        export CACHE_REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@${REDIS_HOST}:${REDIS_PORT:-6379}/${EVO_CACHE_REDIS_DB}"
+
         exec node ./dist/src/main.js
+
     networks:
       - edge
       - data
+
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
+
     environment:
       - SERVER_URL=https://${DOMAIN_EVO}
       - DOCKER_ENV=true
@@ -24,10 +42,10 @@ services:
 
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public
+      # DATABASE_CONNECTION_URI é exportada no command (runtime)
 
       - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://redis:6379/${EVO_CACHE_REDIS_DB}
+      # CACHE_REDIS_URI é exportada no command (runtime)
       - CACHE_REDIS_PREFIX_KEY=${EVO_CACHE_PREFIX}
       - CACHE_LOCAL_ENABLED=false
 
@@ -36,6 +54,7 @@ services:
     secrets:
       - evolution_api_key
       - postgres_password
+      - redis_password
 
     deploy:
       placement:
@@ -43,6 +62,7 @@ services:
           - node.role == manager
       labels:
         - traefik.enable=true
+        - traefik.docker.network=${EDGE_NETWORK}
         - traefik.http.routers.evolution.rule=Host(`${DOMAIN_EVO}`)
         - traefik.http.routers.evolution.entrypoints=websecure
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
@@ -55,6 +75,9 @@ secrets:
   postgres_password:
     external: true
     name: "${TENANT}_${ENV}_postgres_password"
+  redis_password:
+    external: true
+    name: "${TENANT}_${ENV}_redis_password"
 
 volumes:
   evolution_instances:
