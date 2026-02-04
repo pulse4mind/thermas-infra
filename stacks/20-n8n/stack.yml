@@ -25,21 +25,24 @@ x-n8n-env: &n8n_env
   GENERIC_TIMEZONE: ${TZ}
   TZ: ${TZ}
 
+  # (Opcional, mas recomendado p/ produção)
+  N8N_LOG_LEVEL: info
+  N8N_DIAGNOSTICS_ENABLED: "false"
+
 services:
   n8n_editor:
     image: n8nio/n8n:1.90.2
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" &&
-      exec n8n start
+    command: /bin/sh -lc 'export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" && exec n8n start'
     networks:
       - edge
       - data
     environment:
       <<: *n8n_env
     secrets:
-      - postgres_password
-      - n8n_encryption_key
+      - source: postgres_password
+        target: postgres_password
+      - source: n8n_encryption_key
+        target: n8n_encryption_key
     deploy:
       replicas: 1
       placement:
@@ -55,18 +58,17 @@ services:
 
   n8n_webhook:
     image: n8nio/n8n:1.90.2
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" &&
-      exec n8n webhook
+    command: /bin/sh -lc 'export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" && exec n8n webhook'
     networks:
       - edge
       - data
     environment:
       <<: *n8n_env
     secrets:
-      - postgres_password
-      - n8n_encryption_key
+      - source: postgres_password
+        target: postgres_password
+      - source: n8n_encryption_key
+        target: n8n_encryption_key
     deploy:
       replicas: 2
       placement:
@@ -83,17 +85,16 @@ services:
 
   n8n_worker:
     image: n8nio/n8n:1.90.2
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" &&
-      exec n8n worker --concurrency=10
+    command: /bin/sh -lc 'export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" && exec n8n worker --concurrency=10'
     networks:
       - data
     environment:
       <<: *n8n_env
     secrets:
-      - postgres_password
-      - n8n_encryption_key
+      - source: postgres_password
+        target: postgres_password
+      - source: n8n_encryption_key
+        target: n8n_encryption_key
     deploy:
       replicas: 1
       placement:
