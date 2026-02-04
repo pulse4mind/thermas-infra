@@ -30,7 +30,7 @@ services:
     image: n8nio/n8n:1.90.2
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)" &&
+      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" &&
       exec n8n start
     networks:
       - edge
@@ -57,7 +57,7 @@ services:
     image: n8nio/n8n:1.90.2
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)" &&
+      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" &&
       exec n8n webhook
     networks:
       - edge
@@ -85,7 +85,7 @@ services:
     image: n8nio/n8n:1.90.2
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)" &&
+      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)" &&
       exec n8n worker --concurrency=10
     networks:
       - data
