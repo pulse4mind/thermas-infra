@@ -5,46 +5,36 @@ services:
     image: evoapicloud/evolution-api:v2.3.7
     command: ["node", "./dist/src/main.js"]
     networks:
-      - edge
       - data
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
+
     environment:
-      TZ: ${TZ}
+      TZ: America/Sao_Paulo
       DOCKER_ENV: "true"
-      SERVER_URL: "https://${DOMAIN_EVO}"
+      SERVER_URL: "https://thermas.evo.pulse4mind.com"
 
       AUTHENTICATION_TYPE: "apikey"
-      AUTHENTICATION_API_KEY: "${EVO_TEST_API_KEY}"
+      AUTHENTICATION_API_KEY: "TESTE_TEMPORARIO"
 
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: "postgresql"
-      # ATENÇÃO: teste apenas — use um usuário/senha que você tenha certeza que funciona
-      DATABASE_CONNECTION_URI: "postgresql://postgres:${EVO_TEST_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/evolution_db?schema=evolution_api"
-      DATABASE_URL: "postgresql://postgres:${EVO_TEST_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/evolution_db?schema=evolution_api"
+
+      # ⚠️ TESTE HARD CODED
+      DATABASE_URL: "postgresql://postgres:AdminAdmin@postgres:5432/evolution_db?schema=evolution_api"
+      DATABASE_CONNECTION_URI: "postgresql://postgres:AdminAdmin@postgres:5432/evolution_db?schema=evolution_api"
 
       CACHE_REDIS_ENABLED: "false"
       CACHE_LOCAL_ENABLED: "true"
 
       LOG_LEVEL: "ERROR,WARN,INFO,DEBUG"
 
-      CONFIG_SESSION_PHONE_VERSION: "2.3000.1032131254"
-      CONFIG_SESSION_PHONE_CLIENT: "OrionDesign"
-      CONFIG_SESSION_PHONE_NAME: "Chrome"
-
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
-      labels:
-        - traefik.enable=true
-        - traefik.docker.network=${EDGE_NETWORK}
-        - traefik.http.routers.evolution_test.rule=Host(`${DOMAIN_EVO}`)
-        - traefik.http.routers.evolution_test.entrypoints=websecure
-        - traefik.http.routers.evolution_test.tls.certresolver=letsencryptresolver
-        - traefik.http.services.evolution_test.loadbalancer.server.port=8080
 
 volumes:
   evolution_instances:
@@ -55,9 +45,6 @@ volumes:
     name: "${TENANT}_${ENV}_evolution_store"
 
 networks:
-  edge:
-    external: true
-    name: "${EDGE_NETWORK}"
   data:
     external: true
     name: "${DATA_NETWORK}"
