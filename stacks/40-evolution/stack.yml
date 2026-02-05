@@ -25,7 +25,6 @@ services:
   evolution_api:
     image: evoapicloud/evolution-api:v2.3.7
 
-    # Mantém o modelo "secrets -> export em runtime" (igual Chatwoot/n8n)
     entrypoint: ["/bin/sh", "-lc"]
     command:
       - |
@@ -38,13 +37,11 @@ services:
         test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
         test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; exit 1; };
 
-        # Lê secrets (raw)
+        # Secrets (raw)
         AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
 
-        # URL-encode para senha Postgres (senha forte com caracteres especiais)
+        # URL-encode para senha Postgres/Redis (senha forte com caracteres especiais)
         POSTGRES_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/postgres_password','utf8').trim()))")";
-
-        # URL-encode para senha Redis
         REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
 
         # Hosts/ports via .env (padrão entre stacks), com fallback seguro
@@ -53,21 +50,18 @@ services:
         RD_HOST="$${REDIS_HOST:-redis}";
         RD_PORT="$${REDIS_PORT:-6379}";
 
-        # DB/schema com fallback (mantém compatível com o log do Prisma)
+        # DB/schema com fallback
         DB_NAME="$${EVO_DB_NAME:-evolution_db}";
         DB_SCHEMA="$${EVO_DB_SCHEMA:-evolution_api}";
 
-        # Monta URIs (Postgres com senha ENCODED; Redis com senha ENCODED)
+        # URIs (Postgres/Redis com senha ENCODED)
         DB_URI="postgresql://postgres:$${POSTGRES_PASSWORD_ENC}@$${PG_HOST}:$${PG_PORT}/$${DB_NAME}?schema=$${DB_SCHEMA}";
         REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${RD_HOST}:$${RD_PORT}/$${EVO_CACHE_REDIS_DB}";
 
-        # Exporta para o app
+        # Exporta para o app + Prisma
         export AUTHENTICATION_API_KEY="$$AUTHENTICATION_API_KEY";
-
-        # Define os dois (app + Prisma)
         export DATABASE_CONNECTION_URI="$$DB_URI";
         export DATABASE_URL="$$DB_URI";
-
         export CACHE_REDIS_URI="$$REDIS_URI";
 
         # Debug seguro (não imprime senha real)
@@ -80,6 +74,17 @@ services:
         echo "DATABASE_URL (redacted)=$$(echo "$$DATABASE_URL" | sed -E 's#(postgresql://[^:]+:)[^@]+(@)#\1***\2#')"
         echo "CACHE_REDIS_URI (redacted)=$$(echo "$$CACHE_REDIS_URI" | sed -E 's#(redis://:)[^@]+(@)#\1***\2#')"
 
+        # Garante schema (algumas migrations não criam schema automaticamente)
+        echo "== Ensuring schema exists =="
+        PGPASSWORD_RAW="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
+        ( PGPASSWORD="$$PGPASSWORD_RAW" psql -h "$${PG_HOST}" -p "$${PG_PORT}" -U postgres -d "$${DB_NAME}" -c "CREATE SCHEMA IF NOT EXISTS $${DB_SCHEMA};" ) \
+          || { echo "ERROR creating schema $${DB_SCHEMA} in DB $${DB_NAME}"; exit 1; };
+
+        # Aplica migrations (idempotente) antes de subir o app
+        echo "== Running migrations (db:deploy) =="
+        npm run db:deploy
+
+        echo "== Starting Evolution =="
         exec npm run start:prod
 
     environment:
