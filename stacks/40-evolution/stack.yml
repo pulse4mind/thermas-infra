@@ -4,68 +4,61 @@ x-evolution-env: &evolution_env
   TZ: ${TZ}
   DOCKER_ENV: "true"
 
-  # URL externo (Traefik)
-  DOMAIN_EVO: ${DOMAIN_EVO}
+  # Server
+  SERVER_URL: "https://${DOMAIN_EVO}"
 
   # Auth
   AUTHENTICATION_TYPE: "apikey"
 
-  # Database
+  # Database (provider ok; URI será setada no entrypoint script)
   DATABASE_ENABLED: "true"
   DATABASE_PROVIDER: "postgresql"
 
-  # Cache
+  # Cache (URI será setada no script)
   CACHE_REDIS_ENABLED: "true"
   CACHE_LOCAL_ENABLED: "false"
+  CACHE_REDIS_PREFIX_KEY: "${EVO_CACHE_PREFIX}"
   EVO_CACHE_REDIS_DB: "${EVO_CACHE_REDIS_DB}"
-  EVO_CACHE_PREFIX: "${EVO_CACHE_PREFIX}"
 
-  # Hosts/ports vindos do teu .env
-  POSTGRES_HOST: "${POSTGRES_HOST}"
-  POSTGRES_PORT: "${POSTGRES_PORT}"
-  REDIS_HOST: "${REDIS_HOST}"
-  REDIS_PORT: "${REDIS_PORT}"
-
-  # log (vamos sanitizar no command)
-  EVO_LOG_LEVEL: "${EVO_LOG_LEVEL}"
+  # Logs (pode ser lista: ERROR,WARN,INFO,...)
+  LOG_LEVEL: "${EVO_LOG_LEVEL}"
 
 services:
   evolution_api:
     image: evoapicloud/evolution-api:v2.3.7
-    command:
+
+    # CRÍTICO: bypass no entrypoint do container (senão migrations rodam antes dos exports)
+    entrypoint:
       - sh
       - -lc
-      - |
-        set -e;
 
-        # --- Secrets (trim) ---
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
-        export AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
+    command: |
+      set -e;
 
-        # --- Redis: URL-encode da senha ---
-        export REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
+      # Secrets (trim)
+      POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
+      AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
 
-        # --- Normaliza hosts conforme seu ambiente Swarm (igual Chatwoot) ---
-        PG_HOST="$${POSTGRES_HOST:-postgres_postgres}";
-        if [ "$$PG_HOST" = "postgres" ]; then PG_HOST="postgres_postgres"; fi;
+      # Redis URL-encode
+      REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
 
-        RD_HOST="$${REDIS_HOST:-redis_redis}";
-        if [ "$$RD_HOST" = "redis" ]; then RD_HOST="redis_redis"; fi;
+      # DNS do Swarm: siga o padrão que já funciona no Chatwoot
+      PG_HOST="postgres_postgres";
+      RD_HOST="redis_redis";
 
-        # --- Normaliza LOG_LEVEL (pega o primeiro, baixa pra lower) ---
-        LOG_LEVEL_NORM="$$(echo "$${EVO_LOG_LEVEL:-info}" | cut -d',' -f1 | tr '[:upper:]' '[:lower:]')";
+      # Exporta as vars que o Evolution espera (doc oficial)
+      export AUTHENTICATION_API_KEY="$$AUTHENTICATION_API_KEY";
+      export DATABASE_CONNECTION_URI="postgresql://postgres:$$POSTGRES_PASSWORD@$$PG_HOST:5432/evolution_db?schema=evolution_api";
+      export CACHE_REDIS_URI="redis://:$$REDIS_PASSWORD_ENC@$$RD_HOST:6379/$${EVO_CACHE_REDIS_DB}";
 
-        # --- Vars do Evolution ---
-        export SERVER_URL="https://$${DOMAIN_EVO}";
-        export LOG_LEVEL="$$LOG_LEVEL_NORM";
+      # (Opcional, mas recomendado) valida conexão antes
+      node -e "console.log('DB URI host=', process.env.DATABASE_CONNECTION_URI.split('@')[1].split('/')[0])";
 
-        # DB: usar schema=public para evitar erro de schema inexistente
-        export DATABASE_CONNECTION_URI="postgresql://postgres:$${POSTGRES_PASSWORD}@$${PG_HOST}:$${POSTGRES_PORT:-5432}/evolution_db?schema=public";
+      # Migrations controladas por você (agora com env correto)
+      npm run db:deploy;
 
-        # Redis
-        export CACHE_REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${RD_HOST}:$${REDIS_PORT:-6379}/$${EVO_CACHE_REDIS_DB}";
-
-        exec npm run start:prod
+      # Start
+      exec npm run start:prod
 
     environment:
       <<: *evolution_env
@@ -100,7 +93,6 @@ secrets:
     external: true
     name: "${TENANT}_${ENV}_evolution_api_key"
 
-  # mantendo coerente com o que já funciona no Chatwoot
   postgres_password:
     external: true
     name: thermas_prod_postgres_password
