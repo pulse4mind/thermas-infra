@@ -20,42 +20,56 @@ x-evolution-env: &evolution_env
 services:
   evolution_api:
     image: evoapicloud/evolution-api:v2.3.7
-    command:
-      - sh
-      - -lc
-      - |
-        set -eu;
 
-        # Fail-fast: garante que os secrets existem
-        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
-        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
-        test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; exit 1; };
+    # CRÍTICO: garante que nossos exports acontecem ANTES do bootstrap do container
+    entrypoint: ["/bin/sh", "-lc"]
+    command: |
+      set -eu;
 
-        POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
-        AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
+      # Fail-fast: garante que os secrets existem
+      test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+      test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+      test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; sleep 600; exit 1; };
 
-        # URL-encode para senha Redis (caso tenha caracteres reservados)
-        REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
+      POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password | tr -d '\r\n')";
+      AUTHENTICATION_API_KEY="$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
 
-        # Hosts/ports preferencialmente via .env (como no n8n). Fallback compatível com o que já funcionou.
-        PG_HOST="$${POSTGRES_HOST:-postgres_postgres}";
-        PG_PORT="$${POSTGRES_PORT:-5432}";
-        RD_HOST="$${REDIS_HOST:-redis_redis}";
-        RD_PORT="$${REDIS_PORT:-6379}";
+      # URL-encode para senha Redis (caso tenha caracteres reservados)
+      REDIS_PASSWORD_ENC="$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
 
-        # *** SEM SCHEMA ***
-        DB_URI="postgresql://postgres:$${POSTGRES_PASSWORD}@$${PG_HOST}:$${PG_PORT}/evolution_db";
-        REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${RD_HOST}:$${RD_PORT}/$${EVO_CACHE_REDIS_DB}";
+      # Preferencialmente via .env (padrão entre stacks); fallback coerente
+      # IMPORTANTE: o seu log mostrou host "postgres:5432", então o fallback aqui é "postgres"
+      PG_HOST="${POSTGRES_HOST:-postgres}";
+      PG_PORT="${POSTGRES_PORT:-5432}";
+      RD_HOST="${REDIS_HOST:-redis}";
+      RD_PORT="${REDIS_PORT:-6379}";
 
-        export AUTHENTICATION_API_KEY="$$AUTHENTICATION_API_KEY";
+      DB_NAME="${EVO_DB_NAME:-evolution_db}";
+      DB_SCHEMA="${EVO_DB_SCHEMA:-evolution_api}";
 
-        # Define os dois: o app e o Prisma
-        export DATABASE_CONNECTION_URI="$$DB_URI";
-        export DATABASE_URL="$$DB_URI";
+      DB_URI="postgresql://postgres:${POSTGRES_PASSWORD}@${PG_HOST}:${PG_PORT}/${DB_NAME}?schema=${DB_SCHEMA}";
+      REDIS_URI="redis://:${REDIS_PASSWORD_ENC}@${RD_HOST}:${RD_PORT}/${EVO_CACHE_REDIS_DB}";
 
-        export CACHE_REDIS_URI="$$REDIS_URI";
+      export AUTHENTICATION_API_KEY="${AUTHENTICATION_API_KEY}";
 
-        exec npm run start:prod
+      # App + Prisma
+      export DATABASE_CONNECTION_URI="${DB_URI}";
+      export DATABASE_URL="${DB_URI}";
+
+      export CACHE_REDIS_URI="${REDIS_URI}";
+
+      # Debug seguro (não imprime senha)
+      echo "Evolution bootstrap:"
+      echo "  PG_HOST=${PG_HOST} PG_PORT=${PG_PORT} DB_NAME=${DB_NAME} DB_SCHEMA=${DB_SCHEMA}"
+      echo "  RD_HOST=${RD_HOST} RD_PORT=${RD_PORT} EVO_CACHE_REDIS_DB=${EVO_CACHE_REDIS_DB}"
+      echo "  DATABASE_URL set? $([ -n "${DATABASE_URL:-}" ] && echo yes || echo no)"
+
+      # Start (se falhar, segura o container vivo p/ inspeção)
+      if ! npm run start:prod; then
+        echo "ERROR: Evolution failed to start. Keeping container alive for 10 minutes for inspection..."
+        sleep 600
+        exit 1
+      fi
 
     environment:
       <<: *evolution_env
@@ -74,9 +88,14 @@ services:
       - redis_password
 
     deploy:
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
