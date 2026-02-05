@@ -1,55 +1,87 @@
-version: "3.8"
+version: "3.7"
+
+x-evolution-env: &evolution_env
+  TZ: ${TZ}
+  DOCKER_ENV: "true"
+
+  # URL externo (Traefik)
+  DOMAIN_EVO: ${DOMAIN_EVO}
+
+  # Auth
+  AUTHENTICATION_TYPE: "apikey"
+
+  # Database
+  DATABASE_ENABLED: "true"
+  DATABASE_PROVIDER: "postgresql"
+
+  # Cache
+  CACHE_REDIS_ENABLED: "true"
+  CACHE_LOCAL_ENABLED: "false"
+  EVO_CACHE_REDIS_DB: "${EVO_CACHE_REDIS_DB}"
+  EVO_CACHE_PREFIX: "${EVO_CACHE_PREFIX}"
+
+  # Hosts/ports vindos do teu .env
+  POSTGRES_HOST: "${POSTGRES_HOST}"
+  POSTGRES_PORT: "${POSTGRES_PORT}"
+  REDIS_HOST: "${REDIS_HOST}"
+  REDIS_PORT: "${REDIS_PORT}"
+
+  # log (vamos sanitizar no command)
+  EVO_LOG_LEVEL: "${EVO_LOG_LEVEL}"
 
 services:
   evolution_api:
     image: evoapicloud/evolution-api:v2.3.7
-    env_file:
-      - ./.env
+    command:
+      - sh
+      - -lc
+      - |
+        set -e;
+
+        # --- Secrets (trim) ---
+        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
+        export AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
+
+        # --- Redis: URL-encode da senha ---
+        export REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
+
+        # --- Normaliza hosts conforme seu ambiente Swarm (igual Chatwoot) ---
+        PG_HOST="$${POSTGRES_HOST:-postgres_postgres}";
+        if [ "$$PG_HOST" = "postgres" ]; then PG_HOST="postgres_postgres"; fi;
+
+        RD_HOST="$${REDIS_HOST:-redis_redis}";
+        if [ "$$RD_HOST" = "redis" ]; then RD_HOST="redis_redis"; fi;
+
+        # --- Normaliza LOG_LEVEL (pega o primeiro, baixa pra lower) ---
+        LOG_LEVEL_NORM="$$(echo "$${EVO_LOG_LEVEL:-info}" | cut -d',' -f1 | tr '[:upper:]' '[:lower:]')";
+
+        # --- Vars do Evolution ---
+        export SERVER_URL="https://$${DOMAIN_EVO}";
+        export LOG_LEVEL="$$LOG_LEVEL_NORM";
+
+        # DB: usar schema=public para evitar erro de schema inexistente
+        export DATABASE_CONNECTION_URI="postgresql://postgres:$${POSTGRES_PASSWORD}@$${PG_HOST}:$${POSTGRES_PORT:-5432}/evolution_db?schema=public";
+
+        # Redis
+        export CACHE_REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${RD_HOST}:$${REDIS_PORT:-6379}/$${EVO_CACHE_REDIS_DB}";
+
+        exec npm run start:prod
+
+    environment:
+      <<: *evolution_env
+
     networks:
       - edge
       - data
+
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
+
     secrets:
       - evolution_api_key
       - postgres_password
       - redis_password
-
-    # IMPORTANTE: garantir que exports rodem em shell
-    command: >
-      /bin/sh -lc '
-        set -e;
-
-        # Secrets (trim para remover \n final)
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d "\r\n")";
-        export AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d "\r\n")";
-
-        # Redis: URL-encode da senha (senha pode ter reservados)
-        export REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require(\"fs\").readFileSync(\"/run/secrets/redis_password\",\"utf8\").trim()))")";
-
-        # ---- Config principal ----
-        export DOCKER_ENV="true";
-        export SERVER_URL="https://$${DOMAIN_EVO}";
-
-        export AUTHENTICATION_TYPE="apikey";
-
-        # ---- DB (Evolution v2 aceita: postgresql ou mysql) ----
-        export DATABASE_ENABLED="true";
-        export DATABASE_PROVIDER="postgresql";
-        export DATABASE_CONNECTION_URI="postgresql://postgres:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/evolution_db?schema=evolution_api";
-        export DATABASE_CONNECTION_CLIENT_NAME="$${TENANT}_$${ENV}_evolution";
-
-        # ---- Cache ----
-        export CACHE_REDIS_ENABLED="true";
-        export CACHE_REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${REDIS_HOST}:$${REDIS_PORT}/$${EVO_CACHE_REDIS_DB}";
-        export CACHE_REDIS_PREFIX_KEY="$${EVO_CACHE_PREFIX}";
-        export CACHE_LOCAL_ENABLED="false";
-
-        export LOG_LEVEL="$${EVO_LOG_LEVEL}";
-
-        exec npm run start:prod
-      '
 
     deploy:
       placement:
@@ -67,17 +99,21 @@ secrets:
   evolution_api_key:
     external: true
     name: "${TENANT}_${ENV}_evolution_api_key"
+
+  # mantendo coerente com o que já funciona no Chatwoot
   postgres_password:
     external: true
-    name: "${TENANT}_${ENV}_postgres_password"
+    name: thermas_prod_postgres_password
+
   redis_password:
     external: true
-    name: "${TENANT}_${ENV}_redis_password"
+    name: thermas_prod_redis_password
 
 volumes:
   evolution_instances:
     external: true
     name: "${TENANT}_${ENV}_evolution_instances"
+
   evolution_store:
     external: true
     name: "${TENANT}_${ENV}_evolution_store"
