@@ -1,121 +1,50 @@
 version: "3.7"
 
-x-evolution-env: &evolution_env
-  TZ: ${TZ}
-  DOCKER_ENV: "true"
-  SERVER_URL: "https://${DOMAIN_EVO}"
-
-  AUTHENTICATION_TYPE: "apikey"
-
-  DATABASE_ENABLED: "true"
-  DATABASE_PROVIDER: "postgresql"
-
-  CACHE_REDIS_ENABLED: "true"
-  CACHE_LOCAL_ENABLED: "false"
-  CACHE_REDIS_PREFIX_KEY: "${EVO_CACHE_PREFIX}"
-  EVO_CACHE_REDIS_DB: "${EVO_CACHE_REDIS_DB}"
-
-  LOG_LEVEL: "${EVO_LOG_LEVEL}"
-
 services:
-  evolution_api:
+  evolution_test:
     image: evoapicloud/evolution-api:v2.3.7
-    entrypoint: ["/bin/sh", "-lc"]
-    command: |
-      set -eu;
-
-      echo "== Evolution bootstrap starting =="
-
-      # Fail-fast: garante que os secrets existem
-      test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
-      test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
-      test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; sleep 600; exit 1; };
-
-      POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password | tr -d '\r\n')";
-      AUTHENTICATION_API_KEY="$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
-
-      # URL-encode para senha Redis (caso tenha caracteres reservados)
-      REDIS_PASSWORD_ENC="$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
-
-      # Preferencialmente via .env (padrão entre stacks); fallback coerente
-      PG_HOST="${POSTGRES_HOST:-postgres}";
-      PG_PORT="${POSTGRES_PORT:-5432}";
-      RD_HOST="${REDIS_HOST:-redis}";
-      RD_PORT="${REDIS_PORT:-6379}";
-
-      DB_NAME="${EVO_DB_NAME:-evolution_db}";
-      DB_SCHEMA="${EVO_DB_SCHEMA:-evolution_api}";
-
-      DB_URI="postgresql://postgres:${POSTGRES_PASSWORD}@${PG_HOST}:${PG_PORT}/${DB_NAME}?schema=${DB_SCHEMA}";
-      REDIS_URI="redis://:${REDIS_PASSWORD_ENC}@${RD_HOST}:${RD_PORT}/${EVO_CACHE_REDIS_DB}";
-
-      export AUTHENTICATION_API_KEY="${AUTHENTICATION_API_KEY}";
-      export DATABASE_CONNECTION_URI="${DB_URI}";
-      export DATABASE_URL="${DB_URI}";
-      export CACHE_REDIS_URI="${REDIS_URI}";
-
-      echo "== AFTER EXPORTS (safe dump) =="
-      echo "PG_HOST=${PG_HOST} PG_PORT=${PG_PORT} DB_NAME=${DB_NAME} DB_SCHEMA=${DB_SCHEMA}"
-      echo "RD_HOST=${RD_HOST} RD_PORT=${RD_PORT} EVO_CACHE_REDIS_DB=${EVO_CACHE_REDIS_DB}"
-      echo "AUTHENTICATION_API_KEY set? $([ -n "${AUTHENTICATION_API_KEY:-}" ] && echo yes || echo no)"
-      echo "DATABASE_URL set? $([ -n "${DATABASE_URL:-}" ] && echo yes || echo no)"
-      echo "DATABASE_CONNECTION_URI set? $([ -n "${DATABASE_CONNECTION_URI:-}" ] && echo yes || echo no)"
-      echo "CACHE_REDIS_URI set? $([ -n "${CACHE_REDIS_URI:-}" ] && echo yes || echo no)"
-
-      # Mostra apenas "shape" das URLs, sem senha
-      echo "DATABASE_URL (redacted)=$(echo "${DATABASE_URL}" | sed -E 's#(postgresql://[^:]+:)[^@]+(@)#\1***\2#')"
-      echo "CACHE_REDIS_URI (redacted)=$(echo "${CACHE_REDIS_URI}" | sed -E 's#(redis://:)[^@]+(@)#\1***\2#')"
-
-      echo "== Starting Evolution =="
-      if ! npm run start:prod; then
-        echo "ERROR: Evolution failed to start. Keeping container alive for 10 minutes for inspection..."
-        sleep 600
-        exit 1
-      fi
-
-    environment:
-      <<: *evolution_env
-
+    command: ["node", "./dist/src/main.js"]
     networks:
       - edge
       - data
-
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
+    environment:
+      TZ: ${TZ}
+      DOCKER_ENV: "true"
+      SERVER_URL: "https://${DOMAIN_EVO}"
 
-    secrets:
-      - evolution_api_key
-      - postgres_password
-      - redis_password
+      AUTHENTICATION_TYPE: "apikey"
+      AUTHENTICATION_API_KEY: "${EVO_TEST_API_KEY}"
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: "postgresql"
+      # ATENÇÃO: teste apenas — use um usuário/senha que você tenha certeza que funciona
+      DATABASE_CONNECTION_URI: "postgresql://postgres:${EVO_TEST_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/evolution_db?schema=evolution_api"
+      DATABASE_URL: "postgresql://postgres:${EVO_TEST_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/evolution_db?schema=evolution_api"
+
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+
+      LOG_LEVEL: "ERROR,WARN,INFO,DEBUG"
+
+      CONFIG_SESSION_PHONE_VERSION: "2.3000.1032131254"
+      CONFIG_SESSION_PHONE_CLIENT: "OrionDesign"
+      CONFIG_SESSION_PHONE_NAME: "Chrome"
 
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 10
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
-        - traefik.http.routers.evolution.rule=Host(`${DOMAIN_EVO}`)
-        - traefik.http.routers.evolution.entrypoints=websecure
-        - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
-        - traefik.http.services.evolution.loadbalancer.server.port=8080
-
-secrets:
-  evolution_api_key:
-    external: true
-    name: "${TENANT}_${ENV}_evolution_api_key"
-  postgres_password:
-    external: true
-    name: thermas_prod_postgres_password
-  redis_password:
-    external: true
-    name: thermas_prod_redis_password
+        - traefik.http.routers.evolution_test.rule=Host(`${DOMAIN_EVO}`)
+        - traefik.http.routers.evolution_test.entrypoints=websecure
+        - traefik.http.routers.evolution_test.tls.certresolver=letsencryptresolver
+        - traefik.http.services.evolution_test.loadbalancer.server.port=8080
 
 volumes:
   evolution_instances:
