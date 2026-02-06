@@ -21,30 +21,63 @@ services:
   evolution_api:
     image: evoapicloud/evolution-api:v2.3.7
 
-    entrypoint: ["/bin/sh","-c"]
-    command: |
-      echo "== Evolution bootstrap starting =="
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - |
+        set -eu;
 
-      export AUTHENTICATION_API_KEY="$(cat /run/secrets/evolution_api_key)"
+        echo "== Evolution bootstrap starting =="
 
-      export DATABASE_CONNECTION_URI="postgresql://postgres:$(cat /run/secrets/postgres_password)@postgres:5432/evolution_db?schema=evolution_api"
-      export DATABASE_URL="$DATABASE_CONNECTION_URI"
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; sleep 600; exit 1; };
 
-      export CACHE_REDIS_URI="redis://:$(cat /run/secrets/redis_password)@redis:6379/${EVO_CACHE_REDIS_DB}"
+        AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
 
-      echo "== Running migrations =="
-      npm run db:deploy
+        POSTGRES_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/postgres_password','utf8').trim()))")";
+        REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
 
-      echo "== Starting Evolution =="
-      exec npm run start:prod
+        PG_HOST="$${POSTGRES_HOST:-postgres}";
+        PG_PORT="$${POSTGRES_PORT:-5432}";
+        RD_HOST="$${REDIS_HOST:-redis}";
+        RD_PORT="$${REDIS_PORT:-6379}";
+
+        DB_NAME="$${EVO_DB_NAME:-evolution_db}";
+        DB_SCHEMA="$${EVO_DB_SCHEMA:-evolution_api}";
+
+        DB_URI="postgresql://postgres:$${POSTGRES_PASSWORD_ENC}@$${PG_HOST}:$${PG_PORT}/$${DB_NAME}?schema=$${DB_SCHEMA}";
+        REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${RD_HOST}:$${RD_PORT}/$${EVO_CACHE_REDIS_DB}";
+
+        export AUTHENTICATION_API_KEY="$$AUTHENTICATION_API_KEY";
+        export DATABASE_CONNECTION_URI="$$DB_URI";
+        export DATABASE_URL="$$DB_URI";
+        export CACHE_REDIS_URI="$$REDIS_URI";
+
+        echo "== AFTER EXPORTS (safe) =="
+        echo "PG_HOST=$${PG_HOST} PG_PORT=$${PG_PORT} DB_NAME=$${DB_NAME} DB_SCHEMA=$${DB_SCHEMA}"
+        echo "RD_HOST=$${RD_HOST} RD_PORT=$${RD_PORT} EVO_CACHE_REDIS_DB=$${EVO_CACHE_REDIS_DB}"
+        echo "AUTHENTICATION_API_KEY set? $$([ -n "$${AUTHENTICATION_API_KEY:-}" ] && echo yes || echo no)"
+        echo "DATABASE_URL set? $$([ -n "$${DATABASE_URL:-}" ] && echo yes || echo no)"
+        echo "CACHE_REDIS_URI set? $$([ -n "$${CACHE_REDIS_URI:-}" ] && echo yes || echo no)"
+        echo "DATABASE_URL (redacted)=$$(echo "$$DATABASE_URL" | sed -E 's#(postgresql://[^:]+:)[^@]+(@)#\1***\2#')"
+        echo "CACHE_REDIS_URI (redacted)=$$(echo "$$CACHE_REDIS_URI" | sed -E 's#(redis://:)[^@]+(@)#\1***\2#')"
+
+        echo "== Running migrations (db:deploy) =="
+        if ! npm run db:deploy; then
+          echo "ERROR: db:deploy failed. Holding container for 10 minutes..."
+          sleep 600
+          exit 1
+        fi
+
+        echo "== Starting Evolution =="
+        if ! npm run start:prod; then
+          echo "ERROR: start:prod failed. Holding container for 10 minutes..."
+          sleep 600
+          exit 1
+        fi
 
     environment:
       <<: *evolution_env
-
-    secrets:
-      - evolution_api_key
-      - postgres_password
-      - redis_password
 
     networks:
       - edge
@@ -54,11 +87,27 @@ services:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
 
+    secrets:
+      - evolution_api_key
+      - postgres_password
+      - redis_password
+
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=${EDGE_NETWORK}
+        - traefik.http.routers.evolution.rule=Host(`${DOMAIN_EVO}`)
+        - traefik.http.routers.evolution.entrypoints=websecure
+        - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
+        - traefik.http.services.evolution.loadbalancer.server.port=8080
 
 secrets:
   evolution_api_key:
