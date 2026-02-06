@@ -5,16 +5,20 @@ x-evolution-env: &evolution_env
   DOCKER_ENV: "true"
   SERVER_URL: "https://${DOMAIN_EVO}"
 
+  # Autenticação
   AUTHENTICATION_TYPE: "apikey"
 
+  # Banco
   DATABASE_ENABLED: "true"
   DATABASE_PROVIDER: "postgresql"
 
+  # Cache / Redis
   CACHE_REDIS_ENABLED: "true"
   CACHE_LOCAL_ENABLED: "false"
   CACHE_REDIS_PREFIX_KEY: "${EVO_CACHE_PREFIX}"
   EVO_CACHE_REDIS_DB: "${EVO_CACHE_REDIS_DB}"
 
+  # Logs
   LOG_LEVEL: "${EVO_LOG_LEVEL}"
 
 services:
@@ -28,31 +32,39 @@ services:
 
         echo "== Evolution bootstrap starting =="
 
+        # Fail-fast: garante que os secrets existem (e segura o container p/ debug)
         test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
         test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
         test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; sleep 600; exit 1; };
 
+        # Lê secrets (raw)
         AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
 
+        # URL-encode (senha forte) - mesma abordagem vencedora
         POSTGRES_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/postgres_password','utf8').trim()))")";
         REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
 
+        # Hosts/ports via .env (fallback seguro)
         PG_HOST="$${POSTGRES_HOST:-postgres}";
         PG_PORT="$${POSTGRES_PORT:-5432}";
         RD_HOST="$${REDIS_HOST:-redis}";
         RD_PORT="$${REDIS_PORT:-6379}";
 
+        # DB/schema com fallback
         DB_NAME="$${EVO_DB_NAME:-evolution_db}";
         DB_SCHEMA="$${EVO_DB_SCHEMA:-evolution_api}";
 
+        # Monta URIs
         DB_URI="postgresql://postgres:$${POSTGRES_PASSWORD_ENC}@$${PG_HOST}:$${PG_PORT}/$${DB_NAME}?schema=$${DB_SCHEMA}";
         REDIS_URI="redis://:$${REDIS_PASSWORD_ENC}@$${RD_HOST}:$${RD_PORT}/$${EVO_CACHE_REDIS_DB}";
 
+        # Exporta para o app + Prisma
         export AUTHENTICATION_API_KEY="$$AUTHENTICATION_API_KEY";
         export DATABASE_CONNECTION_URI="$$DB_URI";
         export DATABASE_URL="$$DB_URI";
         export CACHE_REDIS_URI="$$REDIS_URI";
 
+        # Debug seguro
         echo "== AFTER EXPORTS (safe) =="
         echo "PG_HOST=$${PG_HOST} PG_PORT=$${PG_PORT} DB_NAME=$${DB_NAME} DB_SCHEMA=$${DB_SCHEMA}"
         echo "RD_HOST=$${RD_HOST} RD_PORT=$${RD_PORT} EVO_CACHE_REDIS_DB=$${EVO_CACHE_REDIS_DB}"
@@ -87,10 +99,14 @@ services:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
 
+    # ✅ MUDANÇA CRÍTICA: força o target dos secrets (elimina ambiguidade de nome do arquivo em /run/secrets)
     secrets:
-      - evolution_api_key
-      - postgres_password
-      - redis_password
+      - source: evolution_api_key
+        target: evolution_api_key
+      - source: postgres_password
+        target: postgres_password
+      - source: redis_password
+        target: redis_password
 
     deploy:
       replicas: 1
@@ -110,6 +126,7 @@ services:
         - traefik.http.services.evolution.loadbalancer.server.port=8080
 
 secrets:
+  # ✅ Fixos (sem depender de TENANT/ENV) — preserva o estado que já funcionou
   evolution_api_key:
     external: true
     name: thermas_prod_evolution_api_key
