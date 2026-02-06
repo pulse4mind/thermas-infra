@@ -66,9 +66,23 @@ services:
         export CACHE_REDIS_URI="$REDIS_URI"
 
         echo "== AFTER EXPORTS (safe) =="
-        echo "DATABASE_URL set? $( [ -n \"$DATABASE_URL\" ] && echo yes || echo no )"
-        echo "CACHE_REDIS_URI set? $( [ -n \"$CACHE_REDIS_URI\" ] && echo yes || echo no )"
-        echo "AUTHENTICATION_API_KEY set? $( [ -n \"$AUTHENTICATION_API_KEY\" ] && echo yes || echo no )"
+        if [ -n "${DATABASE_URL:-}" ]; then
+          echo "DATABASE_URL set? yes"
+        else
+          echo "DATABASE_URL set? no"
+        fi
+
+        if [ -n "${CACHE_REDIS_URI:-}" ]; then
+          echo "CACHE_REDIS_URI set? yes"
+        else
+          echo "CACHE_REDIS_URI set? no"
+        fi
+
+        if [ -n "${AUTHENTICATION_API_KEY:-}" ]; then
+          echo "AUTHENTICATION_API_KEY set? yes"
+        else
+          echo "AUTHENTICATION_API_KEY set? no"
+        fi
 
         # Migrations (idempotente)
         echo "== Running migrations =="
