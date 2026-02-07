@@ -6,18 +6,18 @@ x-chatwoot-env: &chatwoot_env
   RAILS_ENV: production
   INSTALLATION_ENV: docker
 
-  # Derivado no YAML (robusto)
+  # Derivado no YAML (padrão B)
   FRONTEND_URL: "https://${DNS_PREFIX}.chat.${BASE_DOMAIN}"
-
   FORCE_SSL: ${FORCE_SSL}
+
   ENABLE_ACCOUNT_SIGNUP: "${CHATWOOT_ENABLE_SIGNUP}"
   DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
 
-  POSTGRES_HOST: postgres_postgres
+  POSTGRES_HOST: ${CHATWOOT_POSTGRES_HOST}
   POSTGRES_USERNAME: ${CHATWOOT_POSTGRES_USER}
   POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
 
-  # NÃO setar REDIS_URL aqui, vamos montar via command lendo secret + URL-encoding
+  # NÃO setar REDIS_URL aqui — vamos montar via command lendo secret + URL-encoding
 
   MAILER_SENDER_EMAIL: ${CHATWOOT_MAILER_SENDER}
   MAILER_INBOUND_EMAIL_DOMAIN: ${MAILER_INBOUND_EMAIL_DOMAIN}
@@ -37,14 +37,21 @@ services:
       - sh
       - -lc
       - |
-        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
+        set -eu;
 
-        # Lê a senha do Redis (raw) e URL-encoda (porque senha tem caracteres reservados em URL)
-        export REDIS_PASSWORD_RAW="$$(cat /run/secrets/redis_password)";
+        # Fail-fast: garante que os secrets existem (e segura p/ debug se faltar)
+        test -f /run/secrets/chatwoot_secret_key_base || { echo "ERROR missing chatwoot_secret_key_base"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/smtp_password || { echo "ERROR missing smtp_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+
+        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base | tr -d '\r\n')";
+        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
+        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password | tr -d '\r\n')";
+
+        # Redis password pode ter caracteres especiais -> URL-encode
         export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
-        export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
+        export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@${CHATWOOT_REDIS_HOST}:${CHATWOOT_REDIS_PORT}/0";
 
         # Prepara DB (idempotente) antes de subir o web
         bundle exec rails db:chatwoot_prepare;
@@ -63,16 +70,26 @@ services:
       - smtp_password
       - redis_password
     deploy:
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
+
         - traefik.http.routers.chatwoot.rule=Host(`${DNS_PREFIX}.chat.${BASE_DOMAIN}`)
         - traefik.http.routers.chatwoot.entrypoints=websecure
+        - traefik.http.routers.chatwoot.tls=true
         - traefik.http.routers.chatwoot.tls.certresolver=letsencryptresolver
+
         - traefik.http.services.chatwoot.loadbalancer.server.port=3000
+
+        # Corrige X-Forwarded-Proto p/ SSL
         - traefik.http.middlewares.chatwoot-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
         - traefik.http.routers.chatwoot.middlewares=chatwoot-sslheader@docker
 
@@ -82,13 +99,19 @@ services:
       - sh
       - -lc
       - |
-        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
+        set -eu;
 
-        export REDIS_PASSWORD_RAW="$$(cat /run/secrets/redis_password)";
+        test -f /run/secrets/chatwoot_secret_key_base || { echo "ERROR missing chatwoot_secret_key_base"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+        test -f /run/secrets/smtp_password || { echo "ERROR missing smtp_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+
+        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base | tr -d '\r\n')";
+        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password | tr -d '\r\n')";
+        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password | tr -d '\r\n')";
+
         export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
-        export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
+        export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@${CHATWOOT_REDIS_HOST}:${CHATWOOT_REDIS_PORT}/0";
 
         exec bundle exec sidekiq -C config/sidekiq.yml
     volumes:
@@ -103,9 +126,14 @@ services:
       - smtp_password
       - redis_password
     deploy:
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
 
 secrets:
   chatwoot_secret_key_base:
@@ -116,13 +144,13 @@ secrets:
     external: true
     name: "${STACK_PREFIX}_postgres_password"
 
-  smtp_password:
-    external: true
-    name: "${STACK_PREFIX}_smtp_password"
-
   redis_password:
     external: true
     name: "${STACK_PREFIX}_redis_password"
+
+  smtp_password:
+    external: true
+    name: "${STACK_PREFIX}_smtp_password"
 
 volumes:
   chatwoot_data:
