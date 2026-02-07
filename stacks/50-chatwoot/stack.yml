@@ -41,8 +41,7 @@ services:
         export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
         export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
 
-        # Lê a senha do Redis (raw) e URL-encoda (porque senha tem caracteres reservados em URL)
-        export REDIS_PASSWORD_RAW="$$(cat /run/secrets/redis_password)";
+        # ✅ Redis password URL-encoded (senha forte com caracteres reservados)
         export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
         export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
 
@@ -68,7 +67,8 @@ services:
           - node.role == manager
       labels:
         - traefik.enable=true
-        # ✅ não perder o “ganho” do n8n/evolution: fixa a network que o Traefik usa
+
+        # ✅ ganho preservado: fixa a network que o Traefik usa
         - traefik.docker.network=${EDGE_NETWORK}
 
         # ✅ Derivado no YAML (não depende de DOMAIN_CHAT no .env)
@@ -91,7 +91,6 @@ services:
         export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
         export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
 
-        export REDIS_PASSWORD_RAW="$$(cat /run/secrets/redis_password)";
         export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
         export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
 
