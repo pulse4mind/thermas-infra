@@ -3,7 +3,7 @@ version: "3.7"
 x-evolution-env: &evolution_env
   TZ: ${TZ}
   DOCKER_ENV: "true"
-  SERVER_URL: "https://${DOMAIN_EVO}"
+  SERVER_URL: "https://${DNS_PREFIX}.evo.${BASE_DOMAIN}"
 
   AUTHENTICATION_TYPE: "apikey"
 
@@ -87,7 +87,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
-        - traefik.http.routers.evolution.rule=Host(`${DOMAIN_EVO}`)
+        - traefik.http.routers.evolution.rule=Host(`${DNS_PREFIX}.evo.${BASE_DOMAIN}`)
         - traefik.http.routers.evolution.entrypoints=websecure
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
         - traefik.http.services.evolution.loadbalancer.server.port=8080
@@ -95,21 +95,21 @@ services:
 secrets:
   evolution_api_key:
     external: true
-    name: "${TENANT}_${ENV}_evolution_api_key"
+    name: "${STACK_PREFIX}_evolution_api_key"
   postgres_password:
     external: true
-    name: "${TENANT}_${ENV}_postgres_password"
+    name: "${STACK_PREFIX}_postgres_password"
   redis_password:
     external: true
-    name: "${TENANT}_${ENV}_redis_password"
+    name: "${STACK_PREFIX}_redis_password"
 
 volumes:
   evolution_instances:
     external: true
-    name: "${TENANT}_${ENV}_evolution_instances"
+    name: "${STACK_PREFIX}_evolution_instances"
   evolution_store:
     external: true
-    name: "${TENANT}_${ENV}_evolution_store"
+    name: "${STACK_PREFIX}_evolution_store"
 
 networks:
   edge:
