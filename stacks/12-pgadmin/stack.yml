@@ -17,6 +17,7 @@ services:
 
     networks:
       - edge
+      - data
 
     deploy:
       replicas: 1
@@ -38,6 +39,10 @@ networks:
   edge:
     external: true
     name: "${EDGE_NETWORK}"
+
+  data:
+    external: true
+    name: "${DATA_NETWORK}"
 
 secrets:
   pgadmin_password:
