@@ -33,7 +33,7 @@ x-n8n-env: &n8n_env
 
 services:
   n8n_editor:
-    image: n8nio/n8n:1.90.2
+    image: n8nio/n8n:2.6.4
     entrypoint: ["/bin/sh", "-lc"]
     command:
       - "set -e; test -f /run/secrets/n8n_encryption_key || { echo 'ERROR missing n8n_encryption_key'; ls -lah /run/secrets || true; exit 1; }; test -f /run/secrets/redis_password || { echo 'ERROR missing redis_password'; ls -lah /run/secrets || true; exit 1; }; export N8N_ENCRYPTION_KEY=\"$$(cat /run/secrets/n8n_encryption_key)\"; export QUEUE_BULL_REDIS_PASSWORD=\"$$(cat /run/secrets/redis_password)\"; exec n8n start"
@@ -66,7 +66,7 @@ services:
         - traefik.http.services.n8n_editor.loadbalancer.server.port=5678
 
   n8n_webhook:
-    image: n8nio/n8n:1.90.2
+    image: n8nio/n8n:2.6.4
     entrypoint: ["/bin/sh", "-lc"]
     command:
       - "set -e; test -f /run/secrets/n8n_encryption_key || { echo 'ERROR missing n8n_encryption_key'; ls -lah /run/secrets || true; exit 1; }; test -f /run/secrets/redis_password || { echo 'ERROR missing redis_password'; ls -lah /run/secrets || true; exit 1; }; export N8N_ENCRYPTION_KEY=\"$$(cat /run/secrets/n8n_encryption_key)\"; export QUEUE_BULL_REDIS_PASSWORD=\"$$(cat /run/secrets/redis_password)\"; exec n8n webhook"
@@ -100,7 +100,7 @@ services:
         - traefik.http.services.n8n_webhook.loadbalancer.server.port=5678
 
   n8n_worker:
-    image: n8nio/n8n:1.90.2
+    image: n8nio/n8n:2.6.4
     entrypoint: ["/bin/sh", "-lc"]
     command:
       - "set -e; test -f /run/secrets/n8n_encryption_key || { echo 'ERROR missing n8n_encryption_key'; ls -lah /run/secrets || true; exit 1; }; test -f /run/secrets/redis_password || { echo 'ERROR missing redis_password'; ls -lah /run/secrets || true; exit 1; }; export N8N_ENCRYPTION_KEY=\"$$(cat /run/secrets/n8n_encryption_key)\"; export QUEUE_BULL_REDIS_PASSWORD=\"$$(cat /run/secrets/redis_password)\"; exec n8n worker --concurrency=10"
