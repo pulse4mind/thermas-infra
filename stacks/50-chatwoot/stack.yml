@@ -1,142 +1,141 @@
 version: "3.7"
 
-x-chatwoot-env: &chatwoot_env
-  INSTALLATION_NAME: chatwoot
+x-n8n-env: &n8n_env
+  # Banco
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_DATABASE: n8n_queue
+  DB_POSTGRESDB_USER: postgres
+  DB_POSTGRESDB_PASSWORD_FILE: /run/secrets/postgres_password
+
+  # URLs / Host
+  N8N_HOST: ${DNS_PREFIX}.n8n.${BASE_DOMAIN}
+  N8N_PROTOCOL: https
+  N8N_EDITOR_BASE_URL: https://${DNS_PREFIX}.n8n.${BASE_DOMAIN}
+  WEBHOOK_URL: https://${DNS_PREFIX}.n8n.${BASE_DOMAIN}
+
+  # Execução em fila
+  EXECUTIONS_MODE: queue
+  QUEUE_BULL_REDIS_HOST: redis
+  QUEUE_BULL_REDIS_PORT: "6379"
+  QUEUE_BULL_REDIS_DB: "2"
+  QUEUE_BULL_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+
+  # Geral
   NODE_ENV: production
-  RAILS_ENV: production
-  INSTALLATION_ENV: docker
+  GENERIC_TIMEZONE: ${TZ}
+  TZ: ${TZ}
 
-  # ✅ Derivado no YAML (não depende de FRONTEND_URL no .env)
-  FRONTEND_URL: "https://${DNS_PREFIX}.chat.${BASE_DOMAIN}"
-  FORCE_SSL: ${FORCE_SSL}
+  EXECUTIONS_DATA_PRUNE: "true"
+  EXECUTIONS_DATA_MAX_AGE: "336"
 
-  ENABLE_ACCOUNT_SIGNUP: "${CHATWOOT_ENABLE_SIGNUP}"
-  DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
-
-  POSTGRES_HOST: postgres_postgres
-  POSTGRES_USERNAME: ${CHATWOOT_POSTGRES_USER}
-  POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
-
-  # NÃO setar REDIS_URL aqui, vamos montar via command lendo secret + URL-encoding
-
-  MAILER_SENDER_EMAIL: ${CHATWOOT_MAILER_SENDER}
-  MAILER_INBOUND_EMAIL_DOMAIN: ${MAILER_INBOUND_EMAIL_DOMAIN}
-
-  SMTP_DOMAIN: ${SMTP_DOMAIN}
-  SMTP_ADDRESS: ${SMTP_ADDRESS}
-  SMTP_PORT: "${SMTP_PORT}"
-  SMTP_USERNAME: ${SMTP_USERNAME}
-  SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION}
-  SMTP_ENABLE_STARTTLS_AUTO: "true"
-  SMTP_OPENSSL_VERIFY_MODE: ${SMTP_OPENSSL_VERIFY_MODE}
+  N8N_LOG_LEVEL: info
+  N8N_DIAGNOSTICS_ENABLED: "false"
+  N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
 
 services:
-  chatwoot_app:
-    image: chatwoot/chatwoot:v4.9.2
-    command:
-      - sh
-      - -lc
-      - |
-        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
-
-        # ✅ Redis password URL-encoded (senha forte com caracteres reservados)
-        export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
-        export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
-
-        # Prepara DB (idempotente) antes de subir o web
-        bundle exec rails db:chatwoot_prepare;
-
-        exec bundle exec rails s -p 3000 -b 0.0.0.0
-    volumes:
-      - chatwoot_data:/app/storage
+  n8n_editor:
+    image: n8nio/n8n:1.90.2
     networks:
       - edge
       - data
     environment:
-      <<: *chatwoot_env
+      <<: *n8n_env
     secrets:
-      - chatwoot_secret_key_base
       - postgres_password
-      - smtp_password
       - redis_password
+      - n8n_encryption_key
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
     deploy:
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
       labels:
         - traefik.enable=true
-
-        # ✅ ganho preservado: fixa a network que o Traefik usa
         - traefik.docker.network=${EDGE_NETWORK}
+        - traefik.http.routers.n8n_editor.rule=Host(`${DNS_PREFIX}.n8n.${BASE_DOMAIN}`)
+        - traefik.http.routers.n8n_editor.entrypoints=websecure
+        - traefik.http.routers.n8n_editor.tls.certresolver=letsencryptresolver
+        - traefik.http.services.n8n_editor.loadbalancer.server.port=5678
 
-        # ✅ Derivado no YAML (não depende de DOMAIN_CHAT no .env)
-        - traefik.http.routers.chatwoot.rule=Host(`${DNS_PREFIX}.chat.${BASE_DOMAIN}`)
-        - traefik.http.routers.chatwoot.entrypoints=websecure
-        - traefik.http.routers.chatwoot.tls.certresolver=letsencryptresolver
-
-        - traefik.http.services.chatwoot.loadbalancer.server.port=3000
-
-        - traefik.http.middlewares.chatwoot-sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
-        - traefik.http.routers.chatwoot.middlewares=chatwoot-sslheader@docker
-
-  chatwoot_sidekiq:
-    image: chatwoot/chatwoot:v4.9.2
-    command:
-      - sh
-      - -lc
-      - |
-        export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
-
-        export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
-        export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
-
-        exec bundle exec sidekiq -C config/sidekiq.yml
+  n8n_webhook:
+    image: n8nio/n8n:1.90.2
+    networks:
+      - edge
+      - data
+    environment:
+      <<: *n8n_env
+    secrets:
+      - postgres_password
+      - redis_password
+      - n8n_encryption_key
     volumes:
-      - chatwoot_data:/app/storage
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=${EDGE_NETWORK}
+        - traefik.http.routers.n8n_webhook.rule=Host(`${DNS_PREFIX}.n8n.${BASE_DOMAIN}`) && (PathPrefix(`/webhook`) || PathPrefix(`/webhook-test`))
+        - traefik.http.routers.n8n_webhook.entrypoints=websecure
+        - traefik.http.routers.n8n_webhook.priority=10
+        - traefik.http.routers.n8n_webhook.tls.certresolver=letsencryptresolver
+        - traefik.http.services.n8n_webhook.loadbalancer.server.port=5678
+
+  n8n_worker:
+    image: n8nio/n8n:1.90.2
     networks:
       - data
     environment:
-      <<: *chatwoot_env
+      <<: *n8n_env
     secrets:
-      - chatwoot_secret_key_base
       - postgres_password
-      - smtp_password
       - redis_password
+      - n8n_encryption_key
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_files:/files
     deploy:
+      replicas: 1
       placement:
         constraints:
           - node.role == manager
 
 secrets:
-  chatwoot_secret_key_base:
-    external: true
-    name: "${STACK_PREFIX}_chatwoot_secret_key_base"
-
   postgres_password:
     external: true
-    name: "${STACK_PREFIX}_postgres_password"
-
-  smtp_password:
-    external: true
-    name: "${STACK_PREFIX}_smtp_password"
+    name: ${STACK_PREFIX}_postgres_password
 
   redis_password:
     external: true
-    name: "${STACK_PREFIX}_redis_password"
+    name: ${STACK_PREFIX}_redis_password
+
+  n8n_encryption_key:
+    external: true
+    name: ${STACK_PREFIX}_n8n_encryption_key
 
 volumes:
-  chatwoot_data:
+  n8n_data:
     external: true
-    name: "${STACK_PREFIX}_chatwoot_data"
+    name: ${STACK_PREFIX}_n8n_data
+
+  n8n_files:
+    external: true
+    name: ${STACK_PREFIX}_n8n_files
 
 networks:
   edge:
     external: true
-    name: "${EDGE_NETWORK}"
+    name: ${EDGE_NETWORK}
+
   data:
     external: true
-    name: "${DATA_NETWORK}"
+    name: ${DATA_NETWORK}
