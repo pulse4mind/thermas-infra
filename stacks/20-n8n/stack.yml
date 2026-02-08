@@ -19,6 +19,7 @@ x-n8n-env: &n8n_env
   QUEUE_BULL_REDIS_HOST: redis
   QUEUE_BULL_REDIS_PORT: "6379"
   QUEUE_BULL_REDIS_DB: "2"
+  QUEUE_BULL_REDIS_PASSWORD_FILE: /run/secrets/redis_password
 
   EXECUTIONS_DATA_PRUNE: "true"
   EXECUTIONS_DATA_MAX_AGE: "336"
@@ -28,9 +29,6 @@ x-n8n-env: &n8n_env
   N8N_LOG_LEVEL: info
   N8N_DIAGNOSTICS_ENABLED: "false"
   N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
-
-  # >>> ajustes necessários segundo os logs <<<
-  N8N_RUNNERS_ENABLED: "true"
 
 services:
   n8n_editor:
