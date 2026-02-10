@@ -13,6 +13,7 @@ x-chatwoot-env: &chatwoot_env
   ENABLE_ACCOUNT_SIGNUP: "${CHATWOOT_ENABLE_SIGNUP}"
   DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
 
+  # Mantemos por compatibilidade (algumas rotinas do app usam essas vars)
   POSTGRES_HOST: postgres_postgres
   POSTGRES_USERNAME: ${CHATWOOT_POSTGRES_USER}
   POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
@@ -37,12 +38,20 @@ services:
       - sh
       - -lc
       - |
+        set -e
+
         export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
+        export POSTGRES_PASSWORD_RAW="$$(cat /run/secrets/postgres_password)";
         export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
 
-        # ✅ Redis password URL-encoded (senha forte com caracteres reservados)
+        # ✅ URL-encode de senhas (Postgres e Redis) para evitar quebra de YAML / URLs
+        export POSTGRES_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/postgres_password)";
         export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
+
+        # ✅ Evita o Rails/Psych quebrar ao tentar parsear database.yml com caracteres reservados
+        # Usa DATABASE_URL como fonte de verdade
+        export DATABASE_URL="postgresql://$${POSTGRES_USERNAME}:$${POSTGRES_PASSWORD_ENC}@$${POSTGRES_HOST}:5432/$${POSTGRES_DATABASE}";
+
         export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
 
         # Prepara DB (idempotente) antes de subir o web
@@ -87,11 +96,16 @@ services:
       - sh
       - -lc
       - |
+        set -e
+
         export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
-        export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
+        export POSTGRES_PASSWORD_RAW="$$(cat /run/secrets/postgres_password)";
         export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
 
+        export POSTGRES_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/postgres_password)";
         export REDIS_PASSWORD_ENC="$$(ruby -ruri -e 'print URI.encode_www_form_component(STDIN.read)' < /run/secrets/redis_password)";
+
+        export DATABASE_URL="postgresql://$${POSTGRES_USERNAME}:$${POSTGRES_PASSWORD_ENC}@$${POSTGRES_HOST}:5432/$${POSTGRES_DATABASE}";
         export REDIS_URL="redis://:$${REDIS_PASSWORD_ENC}@redis_redis:6379/0";
 
         exec bundle exec sidekiq -C config/sidekiq.yml
