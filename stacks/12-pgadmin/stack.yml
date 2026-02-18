@@ -1,4 +1,4 @@
-version: "3.9"
+version: "3.7"
 
 services:
   pgadmin:
@@ -35,6 +35,16 @@ services:
 
         - traefik.http.services.pgadmin.loadbalancer.server.port=80
 
+secrets:
+  pgadmin_password:
+    external: true
+    name: "${STACK_PREFIX}_pgadmin_password"
+
+volumes:
+  pgadmin_data:
+    external: true
+    name: "${STACK_PREFIX}_pgadmin_data"
+
 networks:
   edge:
     external: true
@@ -43,13 +53,3 @@ networks:
   data:
     external: true
     name: "${DATA_NETWORK}"
-
-secrets:
-  pgadmin_password:
-    external: true
-    name: ${STACK_PREFIX}_pgadmin_password
-
-volumes:
-  pgadmin_data:
-    external: true
-    name: ${STACK_PREFIX}_pgadmin_data
