@@ -28,22 +28,23 @@ services:
       placement:
         constraints:
           - node.role == manager
-    labels:
-      - "traefik.enable=true"
+      labels:
+        - "traefik.enable=true"
 
-      # Catch-all HTTP → HTTPS
-      - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
-      - "traefik.http.routers.http-catchall.entrypoints=web"
-      - "traefik.http.routers.http-catchall.middlewares=redirect-https@docker"
-      - "traefik.http.routers.http-catchall.priority=1"
+        # Catch-all HTTP → HTTPS
+        - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
+        - "traefik.http.routers.http-catchall.entrypoints=web"
+        - "traefik.http.routers.http-catchall.middlewares=redirect-https@docker"
+        - "traefik.http.routers.http-catchall.priority=1"
 
-      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
+        - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
 
-      - "traefik.http.routers.traefik.rule=Host(`${TENANT}.traefik.${BASE_DOMAIN}`)"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.tls.certresolver=letsencryptresolver"
+        # ✅ Derivado no YAML (mesmo padrão do Chatwoot)
+        - "traefik.http.routers.traefik.rule=Host(`${DNS_PREFIX}.traefik.${BASE_DOMAIN}`)"
+        - "traefik.http.routers.traefik.entrypoints=websecure"
+        - "traefik.http.routers.traefik.service=api@internal"
+        - "traefik.http.routers.traefik.tls.certresolver=letsencryptresolver"
 
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
@@ -63,7 +64,7 @@ services:
 volumes:
   vol_certificates:
     external: true
-    name: "${TENANT}_${ENV}_certificates"
+    name: "${STACK_PREFIX}_certificates"
 
 networks:
   edge:
