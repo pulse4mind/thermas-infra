@@ -1,4 +1,4 @@
-version: "3.8"
+version: "3.7"
 
 services:
   portainer:
@@ -7,16 +7,19 @@ services:
     volumes:
       - portainer_data:/data
     networks:
-      - net_edge
+      - edge
     deploy:
       placement:
         constraints:
           - node.role == manager
       labels:
         - traefik.enable=true
-        - traefik.docker.network=net_edge
 
-        - traefik.http.routers.portainer.rule=Host(`${TENANT}.portainer.${BASE_DOMAIN}`)
+        # ✅ padrão: fixa a network que o Traefik usa
+        - traefik.docker.network=${EDGE_NETWORK}
+
+        # ✅ padrão: DNS derivado no YAML
+        - traefik.http.routers.portainer.rule=Host(`${DNS_PREFIX}.portainer.${BASE_DOMAIN}`)
         - traefik.http.routers.portainer.entrypoints=websecure
         - traefik.http.routers.portainer.tls=true
         - traefik.http.routers.portainer.tls.certresolver=letsencryptresolver
@@ -26,7 +29,7 @@ services:
   portainer_agent:
     image: portainer/agent:2.20.3
     networks:
-      - net_edge
+      - edge
     deploy:
       mode: global
       placement:
@@ -39,9 +42,9 @@ services:
 volumes:
   portainer_data:
     external: true
-    name: "${TENANT}_${ENV}_portainer_data"
+    name: "${STACK_PREFIX}_portainer_data"
 
 networks:
-  net_edge:
+  edge:
     external: true
-    name: net_edge
+    name: "${EDGE_NETWORK}"
