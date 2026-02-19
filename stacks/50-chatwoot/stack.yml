@@ -37,6 +37,14 @@ services:
       - sh
       - -lc
       - |
+        set -e;
+
+        # Fail-fast (protocolo)
+        test -f /run/secrets/chatwoot_secret_key_base || { echo "ERROR missing chatwoot_secret_key_base"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/smtp_password || { echo "ERROR missing smtp_password"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
+
         export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
         export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
         export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
@@ -68,12 +76,13 @@ services:
       labels:
         - traefik.enable=true
 
-        # ✅ ganho preservado: fixa a network que o Traefik usa
+        # ✅ fixa a network que o Traefik usa
         - traefik.docker.network=${EDGE_NETWORK}
 
-        # ✅ Derivado no YAML (não depende de DOMAIN_CHAT no .env)
+        # ✅ Derivado no YAML
         - traefik.http.routers.chatwoot.rule=Host(`${DNS_PREFIX}.chat.${BASE_DOMAIN}`)
         - traefik.http.routers.chatwoot.entrypoints=websecure
+        - traefik.http.routers.chatwoot.tls=true
         - traefik.http.routers.chatwoot.tls.certresolver=letsencryptresolver
 
         - traefik.http.services.chatwoot.loadbalancer.server.port=3000
@@ -87,6 +96,14 @@ services:
       - sh
       - -lc
       - |
+        set -e;
+
+        # Fail-fast (protocolo)
+        test -f /run/secrets/chatwoot_secret_key_base || { echo "ERROR missing chatwoot_secret_key_base"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/smtp_password || { echo "ERROR missing smtp_password"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
+
         export SECRET_KEY_BASE="$$(cat /run/secrets/chatwoot_secret_key_base)";
         export POSTGRES_PASSWORD="$$(cat /run/secrets/postgres_password)";
         export SMTP_PASSWORD="$$(cat /run/secrets/smtp_password)";
