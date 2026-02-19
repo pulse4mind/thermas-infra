@@ -22,21 +22,25 @@ services:
     image: evoapicloud/evolution-api:v2.3.7
     entrypoint: ["/bin/sh", "-lc"]
     command:
-      - >-
+      - |
         set -eu;
+
         echo "== Evolution bootstrap starting ==";
-        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
-        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; sleep 600; exit 1; };
-        test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; sleep 600; exit 1; };
+
+        # Fail-fast (protocolo)
+        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
+        test -f /run/secrets/evolution_api_key || { echo "ERROR missing evolution_api_key"; ls -lah /run/secrets || true; exit 1; };
 
         AUTHENTICATION_API_KEY="$$(cat /run/secrets/evolution_api_key | tr -d '\r\n')";
 
         POSTGRES_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/postgres_password','utf8').trim()))")";
         REDIS_PASSWORD_ENC="$$(node -e "process.stdout.write(encodeURIComponent(require('fs').readFileSync('/run/secrets/redis_password','utf8').trim()))")";
 
-        PG_HOST="$${POSTGRES_HOST:-postgres}";
+        # Defaults alinhados ao padrão de nomes Swarm do projeto
+        PG_HOST="$${POSTGRES_HOST:-postgres_postgres}";
         PG_PORT="$${POSTGRES_PORT:-5432}";
-        RD_HOST="$${REDIS_HOST:-redis}";
+        RD_HOST="$${REDIS_HOST:-redis_redis}";
         RD_PORT="$${REDIS_PORT:-6379}";
 
         DB_NAME="$${EVO_DB_NAME:-evolution_db}";
@@ -51,7 +55,7 @@ services:
         export CACHE_REDIS_URI="$$REDIS_URI";
 
         echo "== Running migrations (db:deploy) ==";
-        npm run db:deploy || { echo "ERROR: db:deploy failed"; sleep 600; exit 1; };
+        npm run db:deploy || { echo "ERROR: db:deploy failed"; exit 1; };
 
         echo "== Starting Evolution ==";
         exec npm run start:prod
@@ -68,12 +72,9 @@ services:
       - evolution_store:/evolution/store
 
     secrets:
-      - source: evolution_api_key
-        target: evolution_api_key
-      - source: postgres_password
-        target: postgres_password
-      - source: redis_password
-        target: redis_password
+      - evolution_api_key
+      - postgres_password
+      - redis_password
 
     deploy:
       replicas: 1
@@ -87,6 +88,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
+
         - traefik.http.routers.evolution.rule=Host(`${DNS_PREFIX}.evo.${BASE_DOMAIN}`)
         - traefik.http.routers.evolution.entrypoints=websecure
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
@@ -96,9 +98,11 @@ secrets:
   evolution_api_key:
     external: true
     name: "${STACK_PREFIX}_evolution_api_key"
+
   postgres_password:
     external: true
     name: "${STACK_PREFIX}_postgres_password"
+
   redis_password:
     external: true
     name: "${STACK_PREFIX}_redis_password"
@@ -107,6 +111,7 @@ volumes:
   evolution_instances:
     external: true
     name: "${STACK_PREFIX}_evolution_instances"
+
   evolution_store:
     external: true
     name: "${STACK_PREFIX}_evolution_store"
@@ -115,6 +120,7 @@ networks:
   edge:
     external: true
     name: "${EDGE_NETWORK}"
+
   data:
     external: true
     name: "${DATA_NETWORK}"
