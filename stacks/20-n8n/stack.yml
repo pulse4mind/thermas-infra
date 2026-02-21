@@ -1,32 +1,55 @@
 version: "3.7"
 
 x-n8n-env: &n8n_env
+  # =========================
+  # Database (Postgres)
+  # =========================
   DB_TYPE: postgresdb
   DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
   DB_POSTGRESDB_HOST: postgres_postgres
   DB_POSTGRESDB_PORT: "5432"
   DB_POSTGRESDB_USER: ${N8N_DB_USER}
+  # DB_POSTGRESDB_PASSWORD será injetado via secret no command (export)
 
+  # =========================
+  # Public URLs (derivado no YAML)
+  # =========================
   N8N_HOST: "${DNS_PREFIX}.n8n.${BASE_DOMAIN}"
   N8N_PROTOCOL: https
   N8N_EDITOR_BASE_URL: "https://${DNS_PREFIX}.n8n.${BASE_DOMAIN}"
   WEBHOOK_URL: "https://${DNS_PREFIX}.n8n.${BASE_DOMAIN}/"
 
+  # =========================
+  # Runtime
+  # =========================
   NODE_ENV: production
+  GENERIC_TIMEZONE: ${TZ}
+  TZ: ${TZ}
 
+  # =========================
+  # Queue Mode (Redis)
+  # =========================
   EXECUTIONS_MODE: queue
   QUEUE_BULL_REDIS_HOST: redis_redis
   QUEUE_BULL_REDIS_PORT: "6379"
   QUEUE_BULL_REDIS_DB: "${N8N_QUEUE_REDIS_DB}"
+  # QUEUE_BULL_REDIS_PASSWORD será injetado via secret no command (export)
 
+  # =========================
+  # Housekeeping
+  # =========================
   EXECUTIONS_DATA_PRUNE: "true"
   EXECUTIONS_DATA_MAX_AGE: "${N8N_EXECUTIONS_DATA_MAX_AGE}"
-  GENERIC_TIMEZONE: ${TZ}
-  TZ: ${TZ}
 
+  # =========================
+  # Logging / Hardening
+  # =========================
   N8N_LOG_LEVEL: info
   N8N_DIAGNOSTICS_ENABLED: "false"
   N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+
+  # (Opcional) se existir no .env, será repassado
+  N8N_NODE_FUNCTION_ALLOW_EXTERNAL: ${N8N_NODE_FUNCTION_ALLOW_EXTERNAL}
 
 services:
   n8n_editor:
@@ -47,13 +70,15 @@ services:
     command: |
       set -e;
 
+      # Fail-fast (protocolo)
       test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-      export DB_POSTGRESDB_PASSWORD="$(cat /run/secrets/postgres_password)";
-      export QUEUE_BULL_REDIS_PASSWORD="$(cat /run/secrets/redis_password)";
-      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)";
+      # Swarm: escapar $ com $$ dentro do YAML
+      export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
+      export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
+      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
 
       exec n8n start
     deploy:
@@ -67,6 +92,7 @@ services:
 
         - traefik.http.routers.n8n.rule=Host(`${DNS_PREFIX}.n8n.${BASE_DOMAIN}`)
         - traefik.http.routers.n8n.entrypoints=websecure
+        - traefik.http.routers.n8n.tls=true
         - traefik.http.routers.n8n.tls.certresolver=letsencryptresolver
 
         - traefik.http.services.n8n.loadbalancer.server.port=5678
@@ -89,13 +115,14 @@ services:
     command: |
       set -e;
 
+      # Fail-fast (protocolo)
       test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-      export DB_POSTGRESDB_PASSWORD="$(cat /run/secrets/postgres_password)";
-      export QUEUE_BULL_REDIS_PASSWORD="$(cat /run/secrets/redis_password)";
-      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)";
+      export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
+      export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
+      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
 
       exec n8n webhook
     deploy:
@@ -110,6 +137,7 @@ services:
         - traefik.http.routers.n8n_webhook.rule=Host(`${DNS_PREFIX}.n8n.${BASE_DOMAIN}`) && (PathPrefix(`/webhook`) || PathPrefix(`/webhook-test`))
         - traefik.http.routers.n8n_webhook.entrypoints=websecure
         - traefik.http.routers.n8n_webhook.priority=10
+        - traefik.http.routers.n8n_webhook.tls=true
         - traefik.http.routers.n8n_webhook.tls.certresolver=letsencryptresolver
 
         - traefik.http.services.n8n_webhook.loadbalancer.server.port=5678
@@ -131,13 +159,14 @@ services:
     command: |
       set -e;
 
+      # Fail-fast (protocolo)
       test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-      export DB_POSTGRESDB_PASSWORD="$(cat /run/secrets/postgres_password)";
-      export QUEUE_BULL_REDIS_PASSWORD="$(cat /run/secrets/redis_password)";
-      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)";
+      export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
+      export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
+      export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
 
       exec n8n worker
     deploy:
