@@ -20,8 +20,8 @@ services:
 
         export RI_ENCRYPTION_KEY="$$(cat /run/secrets/redisinsight_encryption_key)";
 
-        # RedisInsight image entrypoint
-        exec /usr/local/bin/docker-entrypoint.sh
+        # Entrypoint real da imagem (conforme docker image inspect)
+        exec ./docker-entry.sh node redisinsight/api/dist/src/main
     volumes:
       - redisinsight_data:/data
     networks:
