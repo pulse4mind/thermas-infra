@@ -75,7 +75,7 @@ services:
       test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
       test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-      # Swarm: escapar $ com $$ dentro do YAML
+      # Swarm: usar $$ para escapar cifrão no YAML
       export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
       export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
       export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
