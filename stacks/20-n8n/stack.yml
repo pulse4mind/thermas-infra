@@ -2,10 +2,10 @@ version: "3.7"
 
 x-n8n-env: &n8n_env
   DB_TYPE: postgresdb
-  DB_POSTGRESDB_DATABASE: ${N8N_POSTGRES_DB}
+  DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
   DB_POSTGRESDB_HOST: postgres_postgres
   DB_POSTGRESDB_PORT: "5432"
-  DB_POSTGRESDB_USER: ${N8N_POSTGRES_USER}
+  DB_POSTGRESDB_USER: ${N8N_DB_USER}
 
   N8N_HOST: "${DNS_PREFIX}.n8n.${BASE_DOMAIN}"
   N8N_PROTOCOL: https
@@ -17,10 +17,10 @@ x-n8n-env: &n8n_env
   EXECUTIONS_MODE: queue
   QUEUE_BULL_REDIS_HOST: redis_redis
   QUEUE_BULL_REDIS_PORT: "6379"
-  QUEUE_BULL_REDIS_DB: "2"
+  QUEUE_BULL_REDIS_DB: "${N8N_QUEUE_REDIS_DB}"
 
   EXECUTIONS_DATA_PRUNE: "true"
-  EXECUTIONS_DATA_MAX_AGE: "336"
+  EXECUTIONS_DATA_MAX_AGE: "${N8N_EXECUTIONS_DATA_MAX_AGE}"
   GENERIC_TIMEZONE: ${TZ}
   TZ: ${TZ}
 
@@ -31,6 +31,7 @@ x-n8n-env: &n8n_env
 services:
   n8n_editor:
     image: n8nio/n8n:2.6.4
+    entrypoint: ["/bin/sh", "-lc"]
     networks:
       - edge
       - data
@@ -43,21 +44,18 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - n8n_files:/files
-    command:
-      - sh
-      - -lc
-      - |
-        set -e;
+    command: |
+      set -e;
 
-        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; exit 1; };
-        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; exit 1; };
-        test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; exit 1; };
+      test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
+      test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
+      test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-        export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
-        export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
+      export DB_POSTGRESDB_PASSWORD="$(cat /run/secrets/postgres_password)";
+      export QUEUE_BULL_REDIS_PASSWORD="$(cat /run/secrets/redis_password)";
+      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)";
 
-        exec n8n start
+      exec n8n start
     deploy:
       replicas: 1
       placement:
@@ -75,6 +73,7 @@ services:
 
   n8n_webhook:
     image: n8nio/n8n:2.6.4
+    entrypoint: ["/bin/sh", "-lc"]
     networks:
       - edge
       - data
@@ -87,21 +86,18 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - n8n_files:/files
-    command:
-      - sh
-      - -lc
-      - |
-        set -e;
+    command: |
+      set -e;
 
-        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; exit 1; };
-        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; exit 1; };
-        test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; exit 1; };
+      test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
+      test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
+      test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-        export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
-        export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
+      export DB_POSTGRESDB_PASSWORD="$(cat /run/secrets/postgres_password)";
+      export QUEUE_BULL_REDIS_PASSWORD="$(cat /run/secrets/redis_password)";
+      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)";
 
-        exec n8n webhook
+      exec n8n webhook
     deploy:
       replicas: 2
       placement:
@@ -111,7 +107,6 @@ services:
         - traefik.enable=true
         - traefik.docker.network=${EDGE_NETWORK}
 
-        # Webhooks têm prioridade maior para ganhar do router "n8n" no mesmo host
         - traefik.http.routers.n8n_webhook.rule=Host(`${DNS_PREFIX}.n8n.${BASE_DOMAIN}`) && (PathPrefix(`/webhook`) || PathPrefix(`/webhook-test`))
         - traefik.http.routers.n8n_webhook.entrypoints=websecure
         - traefik.http.routers.n8n_webhook.priority=10
@@ -121,6 +116,7 @@ services:
 
   n8n_worker:
     image: n8nio/n8n:2.6.4
+    entrypoint: ["/bin/sh", "-lc"]
     networks:
       - data
     environment:
@@ -132,21 +128,18 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - n8n_files:/files
-    command:
-      - sh
-      - -lc
-      - |
-        set -e;
+    command: |
+      set -e;
 
-        test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; exit 1; };
-        test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; exit 1; };
-        test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; exit 1; };
+      test -f /run/secrets/postgres_password || { echo "ERROR missing postgres_password"; ls -lah /run/secrets || true; exit 1; };
+      test -f /run/secrets/redis_password || { echo "ERROR missing redis_password"; ls -lah /run/secrets || true; exit 1; };
+      test -f /run/secrets/n8n_encryption_key || { echo "ERROR missing n8n_encryption_key"; ls -lah /run/secrets || true; exit 1; };
 
-        export DB_POSTGRESDB_PASSWORD="$$(cat /run/secrets/postgres_password)";
-        export QUEUE_BULL_REDIS_PASSWORD="$$(cat /run/secrets/redis_password)";
-        export N8N_ENCRYPTION_KEY="$$(cat /run/secrets/n8n_encryption_key)";
+      export DB_POSTGRESDB_PASSWORD="$(cat /run/secrets/postgres_password)";
+      export QUEUE_BULL_REDIS_PASSWORD="$(cat /run/secrets/redis_password)";
+      export N8N_ENCRYPTION_KEY="$(cat /run/secrets/n8n_encryption_key)";
 
-        exec n8n worker
+      exec n8n worker
     deploy:
       replicas: 1
       placement:
